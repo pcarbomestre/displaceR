@@ -1,0 +1,175 @@
+
+  # ---------------------------------------------------------------------------
+  # Windows
+  # ---------------------------------------------------------------------------
+  #
+  # A separate job rather than a matrix entry on `build`: almost nothing is
+  # shared. Dependencies come from vcpkg instead of apt, there is no ELF to
+  # patch (no patchelf, no RPATH, no ldd), the payload is DLLs rather than .so
+  # files, and it ships as a zip.
+  #
+  # Windows needs NO source patches. Upstream's own CMakePresets.json does not
+  # raise CMAKE_CXX_STANDARD, so MSVC compiles at its C++14 default where
+  # std::random_shuffle is still legal -- the conflict that blocks macOS never
+  # arises here. See docs/upstream-issues.md 14.
+  build-windows:
+    if: inputs.build_windows
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out displaceR
+        uses: actions/checkout@v4
+
+      - name: Check out upstream DISPLACE
+        run: |
+          set -euo pipefail
+          git clone https://github.com/frabas/DISPLACE_GUI.git upstream
+          git -C upstream checkout --detach "${{ inputs.upstream_ref }}"
+          echo "UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Check out helper sources
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/greg7mdp/sparsepp.git sparsepp
+          git clone --depth 1 https://github.com/studiofuga/mSqliteCpp.git mSqliteCpp
+
+      - name: Install dependencies with vcpkg
+        run: |
+          set -euo pipefail
+          # The runner ships vcpkg at VCPKG_INSTALLATION_ROOT.
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install --triplet x64-windows \
+            boost-date-time boost-filesystem boost-system boost-thread \
+            boost-program-options boost-log boost-test boost-geometry \
+            boost-interprocess sqlite3 geographiclib
+          echo "CMAKE_TOOLCHAIN=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Build msqlitecpp
+        run: |
+          set -euo pipefail
+          # Same missing find_package(SQLite3) as everywhere else; the shim
+          # defines the imported target that msqlitecpp links but never looks
+          # up. See docs/upstream-issues.md 13.
+          cat > sqlite-shim.cmake <<'SHIM'
+          find_package(SQLite3 QUIET)
+          if (NOT TARGET SQLite::SQLite3)
+              add_library(SQLite::SQLite3 UNKNOWN IMPORTED)
+              set_target_properties(SQLite::SQLite3 PROPERTIES
+                  IMPORTED_LOCATION "${SQLite3_LIBRARY}"
+                  INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIR}")
+          endif()
+          SHIM
+          cmake -S mSqliteCpp -B mSqliteCpp/build -A x64 \
+            -DENABLE_TEST=Off -DENABLE_PROFILER=Off \
+            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_PROJECT_INCLUDE="$PWD/sqlite-shim.cmake" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_INSTALL_PREFIX="$PWD/local"
+          cmake --build mSqliteCpp/build --config Release --target install
+
+      - name: Build the headless simulator
+        run: |
+          set -euo pipefail
+          cmake -S upstream -B upstream/build -A x64 \
+            -DWITHOUT_GUI=On \
+            -DSPARSEPP_ROOT="$PWD/sparsepp" \
+            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_PREFIX_PATH="$PWD/local" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build upstream/build --config Release --target displace
+
+      - name: Stage the payload
+        id: stage
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          # The executable plus every DLL it needs. Unlike the Linux payload
+          # there is no RPATH to set: Windows resolves DLLs from the directory
+          # holding the .exe, which is exactly the layout produced here.
+          find upstream/build -name 'displace.exe' -exec cp {} payload/ \;
+          find upstream/build -name '*.dll' -exec cp {} payload/ \;
+          find local -name '*.dll' -exec cp {} payload/ \;
+          cp "$VCPKG_INSTALLATION_ROOT"/installed/x64-windows/bin/*.dll payload/ 2>/dev/null || true
+          ls -la payload/
+          test -f payload/displace.exe || { echo "::error::no displace.exe produced"; exit 1; }
+          echo "name=displace-${UPSTREAM_SHA:0:12}-windows-x86_64" >> "$GITHUB_OUTPUT"
+
+      - name: Verify it runs
+        run: |
+          set -euo pipefail
+          cd payload
+          ./displace.exe --help | head -20
+
+      - name: Smoke test against DISPLACE_input_minitest
+        id: smoke
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git "$RUNNER_TEMP/minitest" || exit 1
+          mkdir -p "$RUNNER_TEMP/out"
+          cd payload
+          set +e
+          ./displace.exe -f fake -F baseline \
+            -a "$RUNNER_TEMP/minitest" -O "$RUNNER_TEMP/out" \
+            -s smoke -i 50 -V 0 --disable-crash-handler > "$RUNNER_TEMP/smoke.log" 2>&1
+          RC=$?
+          set -e
+          tail -20 "$RUNNER_TEMP/smoke.log"
+          echo "exit status: $RC"
+          # As on Linux, the database is the evidence, not the exit status.
+          DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_smoke_out.db"
+          test -f "$DB" || { echo "::error::no output database at $DB"; exit 1; }
+          echo "outputs produced: $(find "$RUNNER_TEMP/out" -type f | wc -l)"
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.stage.outputs.name }}"
+          7z a "${NAME}.zip" ./payload/* > /dev/null
+          sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
+          echo "sha256=$(cut -d' ' -f1 "${NAME}.zip.sha256")" >> "$GITHUB_OUTPUT"
+          cat "${NAME}.zip.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.name }}
+          path: |
+            ${{ steps.stage.outputs.name }}.zip
+            ${{ steps.stage.outputs.name }}.zip.sha256
+
+      - name: Write manifest entry to the step summary
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG:-<tag>}"
+          {
+            echo '### Windows manifest entry'
+            echo
+            echo '```json'
+            cat <<JSON
+          {
+            "url": "${BASE}/${{ steps.stage.outputs.name }}.zip",
+            "sha256": "${{ steps.package.outputs.sha256 }}",
+            "upstream_sha": "${UPSTREAM_SHA}",
+            "os": "windows",
+            "arch": "x86_64"
+          }
+          JSON
+            echo '```'
+            echo
+            echo "smoke test: ${{ steps.smoke.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release asset
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.release_tag }}" \
+            "${{ steps.stage.outputs.name }}.zip" \
+            "${{ steps.stage.outputs.name }}.zip.sha256" \
+            --clobber

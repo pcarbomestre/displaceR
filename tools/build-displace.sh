@@ -66,25 +66,17 @@ if [ "$HOST_OS" = "Linux" ]; then
   command -v patchelf >/dev/null 2>&1 || die "missing required tool: patchelf"
 fi
 
-# macOS is not a supported *download* target: the build is blocked upstream by
-# std::random_shuffle, removed in C++17 and still used at six sites. Fixing it
-# means changing the simulation's RNG stream, which is upstream's call, not
-# ours. Everything up to that point works, so let a Mac user get as far as they
-# can and say plainly where it stops. See docs/roadmap.md.
 if [ "$HOST_OS" = "Darwin" ]; then
-  cat >&2 <<'MACWARN'
-warning: macOS builds are not supported and are expected to fail.
+  cat >&2 <<'MACNOTE'
+note: building on macOS.
 
-  Upstream still calls std::random_shuffle (removed in C++17) at six sites in
-  commons/diffusion.cpp, commons/Vessel.cpp and simulator/main.cpp. libstdc++
-  provides it as an extension, so Linux builds succeed; libc++ does not.
+  libc++ removed std::random_shuffle at C++17, which upstream still calls at
+  six sites, so a compatibility shim is applied (patch "random-shuffle" below).
+  It reproduces libstdc++'s permutation exactly and keeps drawing from rand(),
+  so results follow the same seed as on Linux -- see tools/patches/ and
+  docs/upstream-issues.md 14.
 
-  This script applies every fix that does not alter simulation behaviour, so
-  the build will proceed until it reaches those call sites and stop there.
-
-  See docs/upstream-issues.md 14.
-
-MACWARN
+MACNOTE
 fi
 
 mkdir -p "$WORKDIR" "$OUTDIR"
@@ -199,6 +191,63 @@ if grep -q "$BOOST_LINE" "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake" 2>/dev
   sed_i "s/$BOOST_LINE/$BOOST_FIXED/" \
       "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake"
   PATCHES_APPLIED="${PATCHES_APPLIED}boost-components "
+fi
+
+# Patch 1c: std::random_shuffle, removed in C++17.
+#
+# Upstream needs C++17 for std::shared_mutex (patch 1) but still calls
+# std::random_shuffle, which C++17 removed. libstdc++ and MSVC keep it as an
+# extension, so Linux and Windows are unaffected and this patch never fires
+# there. libc++ does not, so on macOS the two requirements are mutually
+# exclusive and the build cannot complete without this.
+#
+# Faithfulness matters more than the mechanics here. SimModel::initRandom()
+# seeds the *global* rand() from the digits in the simulation name, and every
+# other stochastic decision draws from that same rand(). Replacing these calls
+# with std::shuffle + mt19937 -- the usual modernisation -- would decouple them
+# from that seed and silently change results. The shim instead reproduces the
+# historical libstdc++ algorithm exactly, still drawing from rand(), so the
+# permutation for a given seed is unchanged.
+#
+# Guarded on a compile probe rather than on the OS, so it fires exactly when the
+# standard library lacks the function and is a no-op everywhere else.
+stdlib_has_random_shuffle() {
+  local probe="$WORKDIR/.shuffle-probe.cpp"
+  cat > "$probe" <<'PROBE'
+#include <algorithm>
+#include <vector>
+int main() {
+    std::vector<int> v{1, 2, 3};
+    std::random_shuffle(v.begin(), v.end());
+    return 0;
+}
+PROBE
+  c++ -std=c++17 -fsyntax-only "$probe" >/dev/null 2>&1
+}
+
+if ! stdlib_has_random_shuffle; then
+  log "patching random_shuffle: this standard library removed it at C++17"
+  cp "$(dirname "$0")/patches/random_shuffle_compat.h" \
+     "$WORKDIR/DISPLACE_GUI/include/random_shuffle_compat.h"
+
+  for src in commons/diffusion.cpp commons/Vessel.cpp simulator/main.cpp; do
+    f="$WORKDIR/DISPLACE_GUI/$src"
+    [ -f "$f" ] || continue
+    # Qualify the calls, skipping ones already commented out, then include the
+    # shim. The include goes after the last existing #include so it cannot land
+    # inside the licence header.
+    sed_i 's/^\([^\/]*[^a-zA-Z_]\)random_shuffle[[:space:]]*(/\1displace_compat::random_shuffle(/' "$f"
+    sed_i 's/^random_shuffle[[:space:]]*(/displace_compat::random_shuffle(/' "$f"
+    if ! grep -q 'random_shuffle_compat.h' "$f"; then
+      last_inc="$(grep -n '^#include' "$f" | tail -1 | cut -d: -f1)"
+      if [ -n "$last_inc" ]; then
+        sed_i "${last_inc}a\\
+#include <random_shuffle_compat.h>
+" "$f"
+      fi
+    fi
+  done
+  PATCHES_APPLIED="${PATCHES_APPLIED}random-shuffle "
 fi
 
 # include/version.h hardcodes VERSION and is not derived from git tags, so two
