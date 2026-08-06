@@ -74,6 +74,22 @@ shows no red. If you rename the default branch or start a new one, check
 `gh workflow list` shows every workflow you expect before trusting a green
 branch.
 
+**There is a second, independent reason push CI may not fire here.** Every
+commit on this branch so far was pushed with a `gh` OAuth token (`gho_…`), and
+GitHub suppresses `push`-triggered workflow runs for such pushes — the guard
+that stops CI from re-triggering itself. The repository's event log shows the
+`PushEvent`s, but `?event=push` returns **zero** workflow runs, so the trigger
+fix above cannot be confirmed by pushing from this tooling.
+
+Consequence: until a commit is pushed from a normal git credential (SSH key or
+a personal access token), `R-CMD-check` runs only when dispatched by hand:
+
+```bash
+gh workflow run R-CMD-check --ref <branch>
+```
+
+That dispatch passes on both `release` and `oldrel-1`.
+
 ## Deliberately not implemented
 
 ### A full case-study writer -- partly started, and instructive
