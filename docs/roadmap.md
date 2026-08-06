@@ -10,6 +10,8 @@ Status of the plan in `CLAUDE.md`, as built.
 | 3 — R I/O layer | Runner and readers complete and **verified against a real run**. Writers cover 4 of ~150 input formats. |
 | 4 — Tracking upstream | Watcher plus a golden-file harness that now passes against the real minitest dataset. |
 
+`R-CMD-check` passes in GitHub Actions on both `release` and `oldrel-1`.
+
 ## Blocking, in order
 
 Items needing your decision or your access are collected in
@@ -58,6 +60,19 @@ This picks the runner. The build workflow currently produces both a glibc 2.35
 (Ubuntu 22.04) and a glibc 2.39 (24.04) build, and `install_displace()` selects
 between them, so a wrong guess is recoverable — but building only what is needed
 halves the CI time.
+
+## A CI trap worth not re-learning
+
+`R-CMD-check.yaml` originally filtered its push trigger on `[main, master]`.
+This repository's default branch is neither, so the workflow never fired — and
+because GitHub only registers a workflow once an event matches it, it was also
+absent from `gh workflow list` and could not be dispatched manually at all. It
+had therefore never run once.
+
+A CI job that never runs is indistinguishable from one that passes: the branch
+shows no red. If you rename the default branch or start a new one, check
+`gh workflow list` shows every workflow you expect before trusting a green
+branch.
 
 ## Deliberately not implemented
 
