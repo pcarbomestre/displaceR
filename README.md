@@ -1,8 +1,8 @@
 # displaceR
 
 Run the [DISPLACE](https://displace-project.org/) individual-based fisheries
-simulator from R, on a Linux server, **without a compiler, CMake, or root
-access on that server**.
+simulator from R — on **Linux, macOS or Windows** — **without a compiler,
+CMake, or root access on the machine you run it from**.
 
 ```r
 remotes::install_github("pcarbomestre/displaceR")
@@ -57,12 +57,34 @@ displaceR environment check
 Ready to run.
 ```
 
-This is the first thing to run on a new server, and the first thing to run when
+This is the first thing to run on a new machine, and the first thing to run when
 something fails for an unclear reason. It never installs or changes anything.
+
+Off Linux the platform line is a note rather than a failure: DISPLACE runs on
+macOS and Windows perfectly well, it is only `install_displace()`'s download
+that is Linux-only.
+
+```
+  [    ] platform          Windows (x86-64). DISPLACE runs here, but
+                           install_displace() only publishes Linux builds --
+                           install upstream's Windows installer and point
+                           DISPLACE_BINARY at the simulator.
+```
 
 ### Install the simulator
 
-Once per machine, or once per shared cache directory:
+**On Windows and macOS, use upstream's own package** — it is prebuilt, needs no
+prerequisites, and is the fastest route to a working install:
+
+```r
+# Install from https://github.com/frabas/DISPLACE_GUI/releases (Windows .exe)
+# or upstream's Google Drive (macOS .dmg), then point R at the simulator.
+# Note this is the headless `displace` executable, not the GUI application:
+Sys.setenv(DISPLACE_BINARY = "C:/Program Files/DISPLACE/displace.exe")
+displace_doctor()       # confirms R can see and run it
+```
+
+**On Linux**, once per machine or per shared cache directory:
 
 ```r
 install_displace()      # downloads, verifies sha256, unpacks, chmod +x
@@ -234,9 +256,17 @@ committed. See [`docs/upstream-issues.md`](docs/upstream-issues.md).
 
 ## Status
 
-The R package is complete and tested; the simulator binary is not yet published
-as a release, so `install_displace()` needs `from =` or `DISPLACE_BINARY` for
-now. See [`docs/needs-you.md`](docs/needs-you.md) for what is outstanding and
+The R package is complete and tested. No Linux binary is published as a release
+yet, so on Linux `install_displace()` needs `from =` or `DISPLACE_BINARY`; on
+Windows and macOS, install upstream's package and set `DISPLACE_BINARY`.
+
+**Verified where:** the R layer's readers, writers and runner were exercised
+against a real DISPLACE run on Linux. The platform handling described above is
+tested, but no DISPLACE run has yet been driven from R on Windows or macOS —
+if you do that, `displace_doctor()` is the place to start and a surprise there
+is worth reporting.
+
+See [`docs/needs-you.md`](docs/needs-you.md) for what is outstanding and
 [`docs/roadmap.md`](docs/roadmap.md) for the known gaps.
 
 ## Licensing

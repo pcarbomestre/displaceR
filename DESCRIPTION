@@ -26,6 +26,8 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 RoxygenNote: 7.3.1
-SystemRequirements: A 64-bit Linux host. The DISPLACE simulator binary is
-    downloaded at runtime by install_displace(); no compiler or CMake is
-    required on the target machine.
+SystemRequirements: The DISPLACE simulator, which runs on Linux, macOS and
+    Windows. On 64-bit Linux install_displace() downloads a prebuilt binary at
+    runtime; on macOS and Windows install upstream's package and point the
+    DISPLACE_BINARY environment variable at the simulator. No compiler or CMake
+    is required on the target machine.
