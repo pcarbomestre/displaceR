@@ -1,0 +1,142 @@
+name: Compare platform outputs
+
+# Do the Linux and macOS binaries produce the same numbers from the same
+# inputs?
+#
+# This matters because the macOS build carries a compatibility shim for
+# std::random_shuffle (docs/upstream-issues.md 14). verify-shim.yml already
+# proves the shim reproduces libstdc++'s permutation exactly for a given seed,
+# and a macOS run has been shown to be self-consistent -- but neither shows the
+# two platforms agree with each other, which is what someone publishing results
+# from either would assume.
+#
+# Both jobs run the same public minitest case study with the same simulation
+# name and step count, then checksum every text output. The comparison job
+# diffs the two lists.
+#
+# Expect *some* files to differ: DISPLACE is not reproducible even between two
+# runs on one machine (docs/roadmap.md), and vmslike_* in particular is written
+# from threaded vessel movement. The signal to look for is whether the stable
+# files -- population dynamics above all -- agree across platforms.
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream DISPLACE_GUI ref to build both sides from"
+        required: true
+        default: "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de"
+      steps:
+        description: "Number of simulation steps"
+        required: false
+        default: "500"
+
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            label: linux
+          - os: macos-14
+            label: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git patchelf file binutils sqlite3 \
+            libboost-all-dev libgeographiclib-dev libgdal-dev libsqlite3-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.label == 'macos'
+        run: brew install boost geographiclib sqlite cmake
+
+      - name: Build
+        run: |
+          ./tools/build-displace.sh \
+            --ref "${{ inputs.upstream_ref }}" \
+            --workdir "$RUNNER_TEMP/build" \
+            --outdir "$GITHUB_WORKSPACE/dist"
+
+      - name: Run the same case study
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git "$RUNNER_TEMP/minitest"
+          mkdir -p "$RUNNER_TEMP/out"
+          cd dist/payload
+          set +e
+          ./displace -f fake -F baseline \
+            -a "$RUNNER_TEMP/minitest" -O "$RUNNER_TEMP/out" \
+            -s simu1 -i "${{ inputs.steps }}" -V 0 --disable-crash-handler \
+            > "$RUNNER_TEMP/run.log" 2>&1
+          echo "exit: $?"   # teardown crash expected; the database is the evidence
+          set -e
+          DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_simu1_out.db"
+          test -f "$DB"
+          echo "lastTStep: $(sqlite3 "$DB" "SELECT Value FROM Metadata WHERE Key='lastTStep';")"
+
+      - name: Checksum every text output
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline"
+          # shasum exists on both platforms; sha256sum does not exist on macOS.
+          shasum -a 256 *.dat | sort -k2 > "$GITHUB_WORKSPACE/sums-${{ matrix.label }}.txt"
+          cat "$GITHUB_WORKSPACE/sums-${{ matrix.label }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sums-${{ matrix.label }}
+          path: sums-${{ matrix.label }}.txt
+
+  compare:
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sums-*
+          merge-multiple: true
+
+      - name: Diff the two platforms
+        run: |
+          set -uo pipefail
+          echo "## Linux vs macOS on the same inputs" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          same=0; diff_=0
+          {
+            echo "| output | agree |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          while read -r hash name; do
+            other=$(grep " $name\$" sums-macos.txt | awk '{print $1}')
+            if [ -z "$other" ]; then
+              echo "| $name | missing on macOS |" >> "$GITHUB_STEP_SUMMARY"
+              diff_=$((diff_+1))
+            elif [ "$hash" = "$other" ]; then
+              echo "| $name | yes |" >> "$GITHUB_STEP_SUMMARY"
+              same=$((same+1))
+            else
+              echo "| $name | **NO** |" >> "$GITHUB_STEP_SUMMARY"
+              diff_=$((diff_+1))
+            fi
+          done < sums-linux.txt
+
+          {
+            echo
+            echo "**identical: $same, differing: $diff_**"
+            echo
+            echo "Some divergence is expected: DISPLACE is not reproducible even"
+            echo "between two runs on one machine, and vmslike_* comes from"
+            echo "threaded vessel movement. What matters is whether the"
+            echo "population outputs agree."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "identical: $same, differing: $diff_"
