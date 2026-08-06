@@ -42,6 +42,42 @@ test_that("the executable name follows the platform", {
   expect_equal(basename(displaceR:::find_displace_exe(d)), "displace.exe")
 })
 
+test_that("the platform and simulator lines do not contradict each other", {
+  ## They were derived separately -- one from the manifest, one from the OS --
+  ## and disagreed: "A prebuilt binary is available: install_displace()" printed
+  ## directly above "install upstream's macOS package". Both now come from the
+  ## same answer.
+  local_mocked_bindings(read_manifest = function() list(
+    default = "v", versions = list(v = list(builds = list(
+      "2.39" = list(url = "linux"),
+      "macos-arm64" = list(url = "mac")
+    )))
+  ))
+  withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
+    d <- displace_doctor(verbose = FALSE)
+    sim <- d[d$check == "simulator", ]
+    ## A build exists for every platform in that stub, so whatever the host,
+    ## the advice must be install_displace() and must not send the user off to
+    ## build or download something by hand.
+    expect_match(sim$detail, "install_displace\\(\\)")
+    expect_false(grepl("build one|upstream's", sim$detail))
+  })
+})
+
+test_that("with no build for this platform the advice is to build or point", {
+  local_mocked_bindings(read_manifest = function() list(
+    default = "v", versions = list(v = list(builds = list(
+      "nonesuch-arch" = list(url = "irrelevant")
+    )))
+  ))
+  withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
+    d <- displace_doctor(verbose = FALSE)
+    sim <- d[d$check == "simulator", ]
+    expect_match(sim$detail, "No prebuilt binary is published")
+    expect_match(sim$detail, "DISPLACE_BINARY")
+  })
+})
+
 test_that("a missing simulator is a failure, with the ways to fix it", {
   withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
     d <- displace_doctor(verbose = FALSE)

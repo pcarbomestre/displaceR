@@ -44,6 +44,26 @@ displace_doctor <- function(verbose = TRUE) {
   ## Those are different claims, and conflating them wrongly reports a working
   ## Windows or macOS install as unusable -- so a non-Linux host is never a
   ## failure here, only a note that the binary must come from elsewhere.
+  ## Does the manifest offer a build this host can actually use? Asked once and
+  ## reused: both the platform line and the "no binary found" advice depend on
+  ## it, and deriving it twice from the OS is how they came to contradict each
+  ## other -- "a prebuilt binary is available" next to "install upstream's macOS
+  ## package".
+  have_prebuilt <- tryCatch({
+    m <- read_manifest()
+    entry <- if (!is.null(m$default)) m$versions[[m$default]] else NULL
+    builds <- names(entry$builds %||% list())
+    if (identical(sysname, "Linux")) {
+      ## Linux builds are glibc-keyed; any of them is a candidate, and
+      ## select_build() decides which. Treat "some Linux build exists" as
+      ## available rather than re-running the glibc comparison here.
+      any(!grepl("^(macos|windows)-", builds))
+    } else {
+      keys <- host_build_keys()
+      length(keys) && any(keys %in% builds)
+    }
+  }, error = function(e) FALSE)
+
   if (identical(sysname, "Linux")) {
     add("platform", if (identical(machine, "x86_64")) "ok" else "warn",
         if (identical(machine, "x86_64")) {
@@ -57,15 +77,8 @@ displace_doctor <- function(verbose = TRUE) {
     ## manifest, not about the operating system -- so ask the manifest rather
     ## than hardcoding "Linux only", which went stale the moment macOS builds
     ## were published.
-    have <- tryCatch({
-      m <- read_manifest()
-      entry <- if (!is.null(m$default)) m$versions[[m$default]] else NULL
-      keys <- host_build_keys()
-      length(keys) && any(keys %in% names(entry$builds %||% list()))
-    }, error = function(e) FALSE)
-
     add("platform", "info",
-        if (have) {
+        if (have_prebuilt) {
           sprintf("%s (%s). A prebuilt binary is available: install_displace().",
                   sysname, machine)
         } else {
@@ -122,15 +135,19 @@ displace_doctor <- function(verbose = TRUE) {
 
   path <- tryCatch(displace_path(error = FALSE), error = function(e) NA_character_)
   if (is.na(path)) {
+    ## Lead with install_displace() wherever a build actually exists for this
+    ## host, whatever the platform. Only suggest the manual routes when it
+    ## genuinely has nothing to download.
     add("simulator", "fail", paste0(
-      "no DISPLACE binary found. Either\n",
-      if (identical(sysname, "Linux")) paste0(
-        "      install_displace()                       (once a release is published)\n",
-        "      install_displace(from = \"...tar.gz\")       (from a local build)\n") else paste0(
-        "      install upstream's ",
-        if (is_windows()) "Windows installer" else "macOS package",
-        " from\n",
-        "        https://github.com/frabas/DISPLACE_GUI/releases\n"),
+      "no DISPLACE binary found. ",
+      if (have_prebuilt) paste0(
+        "Run\n",
+        "      install_displace()\n",
+        "  or, to use one you already have,\n") else paste0(
+        "No prebuilt binary is published for this platform, so either\n",
+        "      build one:  tools/build-displace.sh --ref <upstream-sha>\n",
+        "      then:       install_displace(from = \"<built>.tar.gz\")\n",
+        "  or point at a simulator you already have,\n"),
       sprintf("      Sys.setenv(DISPLACE_BINARY = \"/path/to/%s\")",
               displace_exe_name())))
   } else {
