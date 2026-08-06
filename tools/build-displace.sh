@@ -233,11 +233,17 @@ if ! stdlib_has_random_shuffle; then
   for src in commons/diffusion.cpp commons/Vessel.cpp simulator/main.cpp; do
     f="$WORKDIR/DISPLACE_GUI/$src"
     [ -f "$f" ] || continue
-    # Qualify the calls, skipping ones already commented out, then include the
-    # shim. The include goes after the last existing #include so it cannot land
-    # inside the licence header.
-    sed_i 's/^\([^\/]*[^a-zA-Z_]\)random_shuffle[[:space:]]*(/\1displace_compat::random_shuffle(/' "$f"
+    # Qualify the calls, then include the shim. The include goes after the last
+    # existing #include so it cannot land inside the licence header.
+    #
+    # Both substitutions must be idempotent: --workdir is reused between runs,
+    # so a second invocation sees an already-patched tree and would otherwise
+    # produce displace_compat::displace_compat::random_shuffle. The negative
+    # lookbehind is spelled out longhand because BSD sed has no \b or (?<!).
+    sed_i 's/displace_compat::random_shuffle/@@ALREADY@@/g' "$f"
+    sed_i 's/^\([^\/]*[^a-zA-Z_:]\)random_shuffle[[:space:]]*(/\1displace_compat::random_shuffle(/' "$f"
     sed_i 's/^random_shuffle[[:space:]]*(/displace_compat::random_shuffle(/' "$f"
+    sed_i 's/@@ALREADY@@/displace_compat::random_shuffle/g' "$f"
     if ! grep -q 'random_shuffle_compat.h' "$f"; then
       last_inc="$(grep -n '^#include' "$f" | tail -1 | cut -d: -f1)"
       if [ -n "$last_inc" ]; then
@@ -274,21 +280,43 @@ log "reported version: ${DISPLACE_VERSION:-unknown} build ${DISPLACE_BUILD:-unkn
 # Define the target via CMAKE_PROJECT_INCLUDE, which CMake evaluates directly
 # after project() and before src/ is processed. Harmless on Linux, where
 # find_package(SQLite3) simply succeeds. See docs/upstream-issues.md 13.
+#
+# find_package(SQLite3) must actually succeed: if it does not, SQLite3_LIBRARY
+# is empty and the imported target below points at nothing. That links cleanly
+# and then fails at the very end with a wall of "_sqlite3_open_v2, referenced
+# from ..." undefined symbols, which looks nothing like a missing dependency.
+# REQUIRED turns that into an immediate, legible configure error.
 cat > "$WORKDIR/sqlite-target-shim.cmake" <<'SHIM'
-find_package(SQLite3 QUIET)
+find_package(SQLite3 REQUIRED)
 if (NOT TARGET SQLite::SQLite3)
     add_library(SQLite::SQLite3 UNKNOWN IMPORTED)
     set_target_properties(SQLite::SQLite3 PROPERTIES
         IMPORTED_LOCATION "${SQLite3_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIR}")
 endif()
+message(STATUS "displaceR: sqlite3 -> ${SQLite3_LIBRARY}")
 SHIM
+
+# Homebrew's sqlite is keg-only, so it is deliberately absent from the default
+# search path and find_package cannot see it without being told where to look.
+# Harmless on Linux, where brew does not exist and this stays empty.
+SQLITE_HINTS=""
+if command -v brew >/dev/null 2>&1; then
+  BREW_SQLITE="$(brew --prefix sqlite 2>/dev/null || true)"
+  if [ -n "$BREW_SQLITE" ] && [ -d "$BREW_SQLITE" ]; then
+    SQLITE_HINTS="$BREW_SQLITE"
+    log "using Homebrew sqlite at $BREW_SQLITE (keg-only, so it needs an explicit hint)"
+  fi
+fi
 
 log "building msqlitecpp"
 cmake -S "$WORKDIR/mSqliteCpp" -B "$WORKDIR/mSqliteCpp/Build" \
       -DCMAKE_BUILD_TYPE=Release \
       -DENABLE_TEST=Off -DENABLE_PROFILER=Off \
       -DCMAKE_PROJECT_INCLUDE="$WORKDIR/sqlite-target-shim.cmake" \
+      ${SQLITE_HINTS:+-DCMAKE_PREFIX_PATH="$SQLITE_HINTS"} \
+      ${SQLITE_HINTS:+-DSQLite3_INCLUDE_DIR="$SQLITE_HINTS/include"} \
+      ${SQLITE_HINTS:+-DSQLite3_LIBRARY="$SQLITE_HINTS/lib/libsqlite3.dylib"} \
       -DCMAKE_INSTALL_PREFIX="$PREFIX"
 cmake --build "$WORKDIR/mSqliteCpp/Build" --target install -j "$JOBS"
 
@@ -325,12 +353,26 @@ PATCHES_APPLIED="${PATCHES_APPLIED}msqlitecpp-includes "
 # $ORIGIN at configure time and re-assert it with patchelf below. Without it the
 # tarball only works with LD_LIBRARY_PATH set.
 
+# On macOS the Homebrew prefixes must join the search path too: sqlite is
+# keg-only and GeographicLib is not somewhere CMake looks by default. On Linux
+# BREW_PREFIXES stays empty and this is exactly the previous invocation.
+BREW_PREFIXES=""
+if command -v brew >/dev/null 2>&1; then
+  for pkg in sqlite boost geographiclib; do
+    p="$(brew --prefix "$pkg" 2>/dev/null || true)"
+    [ -n "$p" ] && [ -d "$p" ] && BREW_PREFIXES="${BREW_PREFIXES:+$BREW_PREFIXES;}$p"
+  done
+fi
+
+# RPATH is an ELF concept. macOS uses install_name/@loader_path instead, and
+# passing $ORIGIN there is meaningless -- but harmless, and the payload staging
+# below is Linux-only anyway, so keep one code path.
 log "configuring DISPLACE (headless)"
 cmake -S "$WORKDIR/DISPLACE_GUI" -B "$WORKDIR/DISPLACE_GUI/Build" \
       -DCMAKE_BUILD_TYPE=Release \
       -DWITHOUT_GUI=On \
       -DSPARSEPP_ROOT="$WORKDIR/sparsepp" \
-      -DCMAKE_PREFIX_PATH="$PREFIX" \
+      -DCMAKE_PREFIX_PATH="$PREFIX${BREW_PREFIXES:+;$BREW_PREFIXES}" \
       -DCMAKE_CXX_FLAGS="$MSQLITECPP_INCLUDE_FLAG" \
       -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
       -DCMAKE_INSTALL_RPATH='$ORIGIN'
