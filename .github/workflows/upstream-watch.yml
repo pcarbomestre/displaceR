@@ -1,0 +1,151 @@
+name: Watch upstream DISPLACE
+
+# Phase 4 — tracking upstream.
+#
+# The fragile surface between displaceR and DISPLACE is exactly four things:
+# CLI arguments, input formats, output formats, and the SQLite schema. This
+# workflow does not try to detect changes in them — that is the golden-file
+# test's job, and it needs a build to run against. What this does is notice
+# that upstream has moved, so that a build gets triggered and the golden test
+# gets a chance to run.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"      # Mondays, off the hour to avoid the rush
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare upstream HEAD with the pinned manifest
+        id: check
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_SHA="$(git ls-remote https://github.com/frabas/DISPLACE_GUI.git HEAD | cut -f1)"
+          echo "upstream HEAD: $UPSTREAM_SHA"
+
+          PINNED="$(python3 - <<'PY'
+          import json
+          m = json.load(open("inst/manifest.json"))
+          default = m.get("default")
+          versions = m.get("versions") or {}
+          if default and default in versions:
+              print(versions[default].get("upstream_sha", ""))
+          else:
+              # Nothing published yet: report every SHA seen so the first build
+              # still gets prompted.
+              print("")
+          PY
+          )"
+          echo "pinned: ${PINNED:-<none>}"
+
+          {
+            echo "upstream_sha=$UPSTREAM_SHA"
+            echo "pinned_sha=$PINNED"
+            echo "changed=$([ "$UPSTREAM_SHA" != "$PINNED" ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarise what changed
+        if: steps.check.outputs.changed == 'true'
+        id: diff
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/frabas/DISPLACE_GUI.git upstream
+          cd upstream
+
+          PINNED="${{ steps.check.outputs.pinned_sha }}"
+          HEAD_SHA="${{ steps.check.outputs.upstream_sha }}"
+
+          {
+            echo "changed_files<<EOF"
+            if [ -n "$PINNED" ] && git cat-file -e "$PINNED^{commit}" 2>/dev/null; then
+              # Only the four fragile surfaces are worth reporting. Everything
+              # else upstream changes is invisible to this package.
+              git diff --name-only "$PINNED" "$HEAD_SHA" -- \
+                simulator/main.cpp \
+                commons/readdata.cpp \
+                commons/myutils.cpp \
+                commons/TextfileModelLoader.cpp \
+                commons/DatabaseModelLoader.cpp \
+                'commons/storage/**' \
+                docs/output_fileformats.md \
+                InputFileFormats.txt \
+                || true
+            else
+              echo "(no pinned build to diff against)"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the tracking issue
+        if: steps.check.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        env:
+          UPSTREAM_SHA: ${{ steps.check.outputs.upstream_sha }}
+          PINNED_SHA: ${{ steps.check.outputs.pinned_sha }}
+          CHANGED_FILES: ${{ steps.diff.outputs.changed_files }}
+        with:
+          script: |
+            const upstream = process.env.UPSTREAM_SHA;
+            const pinned = process.env.PINNED_SHA || '(none published yet)';
+            const changed = (process.env.CHANGED_FILES || '').trim();
+
+            const title = `Upstream DISPLACE has moved to ${upstream.slice(0, 12)}`;
+
+            const surfaces = changed
+              ? `The following files on displaceR's fragile surface changed:\n\n\`\`\`\n${changed}\n\`\`\`\n`
+              : `No files on displaceR's fragile surface (CLI, input formats, output formats, SQLite schema) changed in this range.\n`;
+
+            const body = [
+              `Upstream \`frabas/DISPLACE_GUI\` HEAD is now \`${upstream}\`.`,
+              `The manifest's default build was made from \`${pinned}\`.`,
+              ``,
+              surfaces,
+              `### What to do`,
+              ``,
+              `1. Run the **Build DISPLACE binary** workflow with \`upstream_ref: ${upstream}\`.`,
+              `2. Check the golden-file test in that run: it reads a real minitest run back through displaceR's readers and is what catches interface drift.`,
+              `3. If it is green, add the manifest entry from the run's step summary to \`inst/manifest.json\` and bump \`default\`.`,
+              `4. If it is red, the change is in one of the four fragile surfaces. Fix the readers before publishing, and update Appendix C in \`CLAUDE.md\` with what moved.`,
+              ``,
+              `_Opened automatically by \`.github/workflows/upstream-watch.yml\`._`
+            ].join('\n');
+
+            // One open issue at a time: reuse it rather than filing a new one
+            // every week while a change waits to be handled.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream'
+            });
+
+            if (existing.data.length > 0) {
+              const issue = existing.data[0];
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                title,
+                body
+              });
+              core.info(`updated issue #${issue.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['upstream']
+              });
+              core.info(`opened issue #${created.data.number}`);
+            }

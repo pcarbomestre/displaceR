@@ -1,0 +1,44 @@
+# Licensing
+
+`displaceR` is released under the GPL-2, matching upstream DISPLACE.
+
+## Why GPL-2 and not something more permissive
+
+`install_displace()` downloads and installs binaries built from the DISPLACE
+sources (https://github.com/frabas/DISPLACE_GUI), which are GPL-2.0. Those
+binaries are published as release assets of this repository, so this repository
+distributes GPL-2 covered work and must be GPL-2 compatible.
+
+## Corresponding source
+
+GPL-2 section 3 requires that the corresponding source accompany the binary.
+For every binary asset this repository publishes, the corresponding source is:
+
+- the upstream commit SHA recorded in `inst/manifest.json` under
+  `upstream_sha`, in the repository `https://github.com/frabas/DISPLACE_GUI`;
+- the exact build recipe in `tools/build-displace.sh` and
+  `.github/workflows/build-displace.yml` at the commit that produced the asset.
+
+Both are recorded in the release notes of every build. The build is reproducible
+from those two pieces alone.
+
+## Third-party runtime components in the tarball
+
+The published tarball contains:
+
+| File | Origin | License |
+|---|---|---|
+| `displace` | DISPLACE_GUI | GPL-2.0 |
+| `libcommons.so` | DISPLACE_GUI | GPL-2.0 |
+| `libformats.so` | DISPLACE_GUI | GPL-2.0 |
+| `libmsqlitecpp.so.1` | https://github.com/studiofuga/mSqliteCpp | see upstream |
+
+Everything else the binary links against (Boost, GeographicLib, sqlite3,
+libstdc++, libc) is a stock system library and is not redistributed.
+
+## Attribution
+
+DISPLACE is developed by Francois Bastardie (DTU Aqua) and contributors.
+Copyright (c) 2012-2026 Francois Bastardie <fba@aqua.dtu.dk>.
+See https://displace-project.org/ and cite the upstream publications when
+publishing results produced with this package.

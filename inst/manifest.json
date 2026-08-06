@@ -1,0 +1,45 @@
+{
+  "manifest_version": 1,
+  "comment": [
+    "Maps a displaceR binary version label to a published release asset.",
+    "",
+    "The authoritative identity of a build is upstream_sha, not the DISPLACE",
+    "version string: include/version.h hardcodes VERSION and is not derived from",
+    "git tags, so many different upstream commits all report '1.6.6'.",
+    "",
+    "Entries are added by hand from the step summary of the 'Build DISPLACE",
+    "binary' workflow. Bump 'default' only once a build has been smoke-tested;",
+    "users who pinned an older version keep working.",
+    "",
+    "'builds' maps a glibc target to an asset. install_displace() picks the",
+    "newest build whose glibc requirement is <= the host's glibc.",
+    "",
+    "'versions' is empty until the first release asset is published. Until then",
+    "install_displace() will tell the user to point DISPLACE_BINARY at a local",
+    "build, or to run the build workflow. See docs/roadmap.md."
+  ],
+  "example_entry": {
+    "_note": "Not a real version. Ignored by the reader; kept as the shape reference.",
+    "upstream_sha": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
+    "upstream_ref": "master",
+    "displace_version": "1.6.6",
+    "displace_build": "0",
+    "released": "2026-08-05",
+    "builds": {
+      "2.35": {
+        "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb/displace-7f2656fb7cd4-linux-x86_64-glibc2.35.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "arch": "x86_64",
+        "built_on": "ubuntu-22.04"
+      },
+      "2.39": {
+        "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb/displace-7f2656fb7cd4-linux-x86_64-glibc2.39.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "arch": "x86_64",
+        "built_on": "ubuntu-24.04"
+      }
+    }
+  },
+  "default": null,
+  "versions": {}
+}

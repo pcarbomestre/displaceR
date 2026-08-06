@@ -1,0 +1,31 @@
+Package: displaceR
+Title: Run the DISPLACE Fisheries Simulator from R
+Version: 0.1.0
+Authors@R:
+    person("Pol", "Carbo Mestre", email = "polcarbo@gmail.com", role = c("aut", "cre"))
+Description: A thin R interface to the DISPLACE individual-based fisheries
+    simulator. The package contains no compiled code: it downloads a prebuilt
+    headless Linux binary published by the companion build pipeline, writes and
+    validates DISPLACE input files, runs the simulator, and reads its SQLite and
+    text outputs back into data frames. Modelled on the r4ss / cmdstanr pattern
+    where the backend is installed separately into a user directory.
+License: GPL-2
+URL: https://github.com/pcarbomestre/displaceR
+BugReports: https://github.com/pcarbomestre/displaceR/issues
+Encoding: UTF-8
+Depends:
+    R (>= 4.0)
+Imports:
+    tools,
+    utils
+Suggests:
+    DBI,
+    RSQLite,
+    digest,
+    jsonlite,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+RoxygenNote: 7.3.1
+SystemRequirements: A 64-bit Linux host. The DISPLACE simulator binary is
+    downloaded at runtime by install_displace(); no compiler or CMake is
+    required on the target machine.

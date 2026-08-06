@@ -1,0 +1,244 @@
+## Column layouts for the text outputs.
+##
+## Transcribed from docs/output_fileformats.md at upstream 7f2656fb. Unlike the
+## input formats in config.R / scenario.R / graph.R, these were taken from
+## documentation rather than from the writers, so they are the part of this
+## package most likely to drift. The golden-file test in
+## tests/testthat/test-golden.R exists to catch that.
+##
+## Files are whitespace separated with no header row.
+##
+## The dispatch seam: displace_output_spec() takes a version. There is only one
+## schema in the wild today, so it has nothing to dispatch on yet; the argument
+## is there so that adding a second layout is a data change, not a rewrite.
+
+N_SZGROUPS <- 14L
+
+OUTPUT_SPECS <- list(
+  vmslike = list(
+    pattern = "^vmslike_",
+    cols = c("tstep", "name", "tstep_dep", "x", "y", "course", "cum_fuel", "state"),
+    types = c("i", "c", "i", "d", "d", "d", "d", "i")
+  ),
+  popstats = list(
+    pattern = "^popstats_",
+    ## tstep, stock, then three blocks of 14 size groups: N (thousands),
+    ## W (kg), SSB (kg).
+    cols = c("tstep", "stock",
+             sprintf("N_szgroup%d", 0:(N_SZGROUPS - 1L)),
+             sprintf("W_szgroup%d", 0:(N_SZGROUPS - 1L)),
+             sprintf("SSB_szgroup%d", 0:(N_SZGROUPS - 1L))),
+    types = c("i", "i", rep("d", 3L * N_SZGROUPS))
+  ),
+  popnodes_start = list(
+    pattern = "^popnodes_start_",
+    cols = NULL,          # width depends on the number of populations
+    builder = "popnodes_totals",
+    types = NULL
+  ),
+  popnodes_inc = list(
+    pattern = "^popnodes_inc_",
+    cols = NULL,
+    builder = "popnodes_totals",
+    types = NULL
+  ),
+  popnodes_end = list(
+    pattern = "^popnodes_end_",
+    cols = NULL,
+    builder = "popnodes_totals",
+    types = NULL
+  ),
+  popnodes_impact = list(
+    pattern = "^popnodes_impact_",
+    cols = c("pop", "tstep", "node_idx", "long", "lat", "impact_on_pop"),
+    types = c("i", "i", "i", "d", "d", "d")
+  ),
+  popnodes_cumulcatches_per_pop = list(
+    pattern = "^popnodes_cumulcatches_per_pop_",
+    ## Named "cumcatches" upstream but it holds landings.
+    cols = c("pop", "tstep", "node_idx", "long", "lat", "cumcatches"),
+    types = c("i", "i", "i", "d", "d", "d")
+  ),
+  popnodes_cumftime = list(
+    pattern = "^popnodes_cumftime_",
+    cols = c("tstep", "node", "long", "lat", "cumftime"),
+    types = c("i", "i", "d", "d", "d")
+  ),
+  popnodes_cumsweptarea = list(
+    pattern = "^popnodes_cumsweptarea_",
+    cols = c("tstep", "node", "long", "lat", "cumsweptarea", "subsurfacecumsweptarea"),
+    types = c("i", "i", "d", "d", "d", "d")
+  ),
+  popnodes_cumcatches = list(
+    pattern = "^popnodes_cumcatches_[^w]",
+    cols = c("tstep", "node_idx", "long", "lat", "cumcatches"),
+    types = c("i", "i", "d", "d", "d")
+  ),
+  popnodes_cumdiscards = list(
+    pattern = "^popnodes_cumdiscards_",
+    cols = c("tstep", "node_idx", "long", "lat", "cumdiscards"),
+    types = c("i", "i", "d", "d", "d")
+  ),
+  popnodes_cumcatches_with_threshold = list(
+    pattern = "^popnodes_cumcatches_with_threshold_",
+    cols = c("tstep", "node_idx", "long", "lat", "cumcatches", "threshold_percent"),
+    types = c("i", "i", "d", "d", "d", "d")
+  ),
+  popnodes_tariffs = list(
+    pattern = "^popnodes_tariffs_",
+    cols = c("tstep", "node", "long", "lat", "tariffs"),
+    types = c("i", "i", "d", "d", "d")
+  ),
+  benthosnodes_tot_biomasses = list(
+    pattern = "^benthosnodes_tot_biomasses_",
+    cols = c("funcgr_id", "tstep", "node", "long", "lat", "number", "biomass",
+             "mean_weight", "benthosbiomassoverK", "benthosnumberoverK",
+             "benthos_tot_biomass_K"),
+    types = c("i", "i", "i", "d", "d", "d", "d", "d", "d", "d", "d")
+  ),
+  benthosnodes_tot_numbers = list(
+    pattern = "^benthosnodes_tot_numbers_",
+    cols = c("funcgr_id", "tstep", "node", "long", "lat", "number", "biomass",
+             "mean_weight", "benthosbiomassoverK", "benthosnumberoverK",
+             "benthos_tot_biomass_K"),
+    types = c("i", "i", "i", "d", "d", "d", "d", "d", "d", "d", "d")
+  ),
+  tripcatchesperszgroup = list(
+    pattern = "^tripcatchesperszgroup_",
+    cols = c("tstep", "vessel", "tstep_dep", "popid",
+             sprintf("catches_szgroup%d", 0:(N_SZGROUPS - 1L))),
+    types = c("i", "c", "i", "i", rep("d", N_SZGROUPS))
+  ),
+  export_individual_tac = list(
+    pattern = "^export_individual_tac_",
+    cols = c("tstep", "vesselid", "pop", "remaining_quota", "discarded_if_zero"),
+    types = c("i", "c", "i", "d", "d")
+  ),
+  fishfarmlogs = list(
+    pattern = "^fishfarmlogs_",
+    cols = c("tstep", "node", "long", "lat", "farmtype", "farmid", "meanw_kg",
+             "fish_harvested_kg", "eggs_harvested_kg", "fishfarm_annualprofit"),
+    types = c("i", "i", "d", "d", "i", "i", "d", "d", "d", "d")
+  ),
+  shipslogs = list(
+    pattern = "^shipslogs_",
+    cols = c("tstep", "node", "long", "lat", "shiptype", "shipid", "nb_units",
+             "fuel_use_h", "NOx_emission_gperkW",
+             "SOx_emission_percentpertotalfuelmass", "GHG_emission_gperkW",
+             "PME_emission_gperkW", "fuel_use_litre", "NOx_emission",
+             "SOx_emission", "GHG_emissions", "PME_emission"),
+    types = c("i", "i", "d", "d", "i", "i", "d", "d", "d", "d", "d", "d",
+              "d", "d", "d", "d", "d")
+  ),
+  windmillslogs = list(
+    pattern = "^windmillslogs_",
+    cols = c("tstep", "node", "long", "lat", "windfarmtype", "windfarmid",
+             "kWh", "kW_production"),
+    types = c("i", "i", "d", "d", "i", "i", "d", "d")
+  ),
+  loglike = list(
+    pattern = "^loglike_[^p]",
+    cols = NULL,
+    builder = "loglike",
+    types = NULL
+  )
+)
+
+#' Column layout of a DISPLACE text output file
+#'
+#' Returns the column names for one of DISPLACE's text output files. Several
+#' layouts are not fixed: their width depends on the number of populations in
+#' the case study, so `nbpops` (and, for `loglike`, `explicit_pops`) must be
+#' supplied.
+#'
+#' @param type Output type, one of `names(displace_output_types())`.
+#' @param nbpops Number of populations, from `config.dat`. Required for the
+#'   variable-width layouts.
+#' @param explicit_pops Zero-based ids of the explicitly modelled populations,
+#'   i.e. `setdiff(0:(nbpops-1), implicit_pops)`. Required for `loglike`.
+#' @param db_version Output schema version, for future dispatch. Currently
+#'   unused: there is one layout in the wild.
+#'
+#' @return A character vector of column names.
+#' @export
+#' @examples
+#' displace_output_spec("popstats")
+#' displace_output_spec("loglike", nbpops = 3, explicit_pops = c(0, 2))
+displace_output_spec <- function(type, nbpops = NULL, explicit_pops = NULL,
+                                 db_version = NULL) {
+  spec <- OUTPUT_SPECS[[type]]
+  if (is.null(spec)) {
+    stopf("unknown output type '%s'. Known: %s",
+          type, paste(names(OUTPUT_SPECS), collapse = ", "))
+  }
+  if (!is.null(spec$cols)) {
+    return(spec$cols)
+  }
+  switch(
+    spec$builder,
+    popnodes_totals = popnodes_totals_cols(nbpops),
+    loglike = loglike_cols(nbpops, explicit_pops),
+    stopf("no column builder for '%s'", type)
+  )
+}
+
+## popnodes_start_/inc_/end_: tstep, node, long, lat, then (tot N, tot W) per
+## population, interleaved.
+popnodes_totals_cols <- function(nbpops) {
+  if (is.null(nbpops)) {
+    stopf(paste0("this layout's width depends on the number of populations; ",
+                 "pass nbpops (it is in config.dat)."))
+  }
+  nbpops <- as.integer(nbpops)
+  per_pop <- as.vector(rbind(sprintf("tot_N_sp%d", 0:(nbpops - 1L)),
+                             sprintf("tot_W_sp%d", 0:(nbpops - 1L))))
+  c("tstep", "node", "long", "lat", per_pop)
+}
+
+## loglike_*.dat — the economics file.
+##
+## Upstream supplies an R idiom for naming these columns, and it inserts a
+## `disc.*` block for the explicit populations that the flat field list in the
+## documentation omits. Where the two disagree, the R idiom is the one that
+## matches real files, so it is what is reproduced here.
+loglike_cols <- function(nbpops, explicit_pops) {
+  if (is.null(nbpops)) {
+    stopf(paste0("loglike's width depends on the number of populations; pass ",
+                 "nbpops (it is in config.dat)."))
+  }
+  if (is.null(explicit_pops)) {
+    stopf(paste0("loglike carries one discard column per *explicit* population; ",
+                 "pass explicit_pops, e.g. ",
+                 "setdiff(0:(nbpops-1), config$implicit_pops)."))
+  }
+  nbpops <- as.integer(nbpops)
+  c(
+    "tstep_dep", "tstep_arr", "reason_back", "cumsteaming", "idx_node",
+    "idx_vessel", "VE_REF", "timeatsea", "fuelcons", "traveled_dist",
+    sprintf("pop.%d", 0:(nbpops - 1L)),
+    "freq_metiers", "revenue", "rev_from_av_prices",
+    "rev_explicit_from_av_prices", "fuelcost", "vpuf", "gav", "gradva",
+    "sweptr", "revpersweptarea",
+    sprintf("disc.%s", explicit_pops),
+    "GVA", "GVAPerRevenue", "LabourSurplus", "GrossProfit", "NetProfit",
+    "NetProfitMargin", "GVAPerFTE", "RoFTA", "BER", "CRBER",
+    "NetPresentValue", "numTrips"
+  )
+}
+
+#' DISPLACE text output types this package can read
+#'
+#' @return A data frame with `type`, `filename_pattern` and `fixed_width`
+#'   (whether the column layout is fixed or depends on `nbpops`).
+#' @export
+#' @examples
+#' displace_output_types()
+displace_output_types <- function() {
+  data.frame(
+    type = names(OUTPUT_SPECS),
+    filename_pattern = vapply(OUTPUT_SPECS, function(s) s$pattern, character(1)),
+    fixed_width = vapply(OUTPUT_SPECS, function(s) !is.null(s$cols), logical(1)),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+}

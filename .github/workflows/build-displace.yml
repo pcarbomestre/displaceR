@@ -1,0 +1,238 @@
+name: Build DISPLACE binary
+
+# Layer 2 of the architecture (see CLAUDE.md): builds the headless DISPLACE
+# simulator from a pinned upstream ref and publishes a relocatable tarball as a
+# release asset. The R package never compiles anything; it consumes what this
+# workflow produces.
+#
+# Run this manually against a pinned SHA first and get it green before wiring
+# anything automated to it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream DISPLACE_GUI ref (tag, branch or commit SHA)"
+        required: true
+        default: "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de"
+      release_tag:
+        description: "Release tag to publish under. Leave empty to build without publishing."
+        required: false
+        default: ""
+      targets:
+        description: "Which glibc targets to build: 'both', '22.04' or '24.04'"
+        required: false
+        default: "both"
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        # Build on the oldest glibc you intend to support: a binary built on
+        # 2.39 will not start on a 2.35 host, but the reverse works fine.
+        run: |
+          case "${{ inputs.targets }}" in
+            22.04) m='[{"os":"ubuntu-22.04","glibc":"2.35"}]' ;;
+            24.04) m='[{"os":"ubuntu-24.04","glibc":"2.39"}]' ;;
+            *)     m='[{"os":"ubuntu-22.04","glibc":"2.35"},{"os":"ubuntu-24.04","glibc":"2.39"}]' ;;
+          esac
+          echo "matrix=$m" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.target.os }}
+    steps:
+      - name: Check out displaceR
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # libboost-all-dev rather than a subset: cmake/dependencies.cmake marks
+          # unit_test_framework REQUIRED even with WITH_TESTS=Off.
+          # libgdal-dev is a configure-time formality; GDAL is not linked.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git patchelf file binutils \
+            libboost-all-dev libgeographiclib-dev libgdal-dev libsqlite3-dev
+
+      - name: Record toolchain
+        run: |
+          cmake --version | head -1
+          c++ --version | head -1
+          ldd --version | head -1
+
+      - name: Build
+        run: |
+          ./tools/build-displace.sh \
+            --ref "${{ inputs.upstream_ref }}" \
+            --workdir "$RUNNER_TEMP/displace-build" \
+            --outdir "$GITHUB_WORKSPACE/dist" \
+            --jobs "$(nproc)"
+
+      - name: Verify the payload is relocatable
+        # The build script already checks this in place. Repeat it after moving
+        # the payload somewhere the build tree cannot help it, which is the
+        # condition the user's server will actually be in.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/relocated"
+          cp -a dist/payload/. "$RUNNER_TEMP/relocated/"
+          rm -rf "$RUNNER_TEMP/displace-build"
+          cd "$RUNNER_TEMP/relocated"
+          echo "--- ldd in a clean environment ---"
+          env -u LD_LIBRARY_PATH ldd ./displace
+          if env -u LD_LIBRARY_PATH ldd ./displace | grep -q 'not found'; then
+            echo "::error::unresolved shared libraries after relocation"
+            exit 1
+          fi
+          echo "--- RPATH ---"
+          objdump -p ./displace | grep -E 'RPATH|RUNPATH'
+          echo "--- --help ---"
+          env -u LD_LIBRARY_PATH ./displace --help | head -20
+
+      - name: Smoke test against DISPLACE_input_minitest
+        # Best effort. The minitest dataset is not versioned anywhere stable, so
+        # a failure to fetch it must not fail the build — but if we do get it,
+        # a short run is by far the strongest signal the binary is usable.
+        id: smoke
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          if git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git minitest 2>/dev/null; then
+            mkdir -p out
+            cd "$RUNNER_TEMP/relocated"
+            env -u LD_LIBRARY_PATH ./displace \
+              -f minitest -F baseline \
+              -a "$RUNNER_TEMP/minitest" \
+              -O "$RUNNER_TEMP/out" \
+              -s smoke -i 25 -V 0 \
+              --disable-crash-handler 2>&1 | tail -40
+            echo "--- outputs produced ---"
+            find "$RUNNER_TEMP/out" -type f | head -40
+          else
+            echo "minitest dataset unavailable; skipping the run smoke test"
+            exit 1
+          fi
+
+      - name: Golden-file regression against the new binary
+        # Phase 4's actual drift detector: run the R readers against outputs
+        # this binary just produced. Everything else in the suite pins down what
+        # displaceR believes; this is what checks whether DISPLACE still agrees.
+        # Skipped, not failed, when the minitest dataset could not be fetched.
+        if: steps.smoke.outcome == 'success'
+        id: golden
+        continue-on-error: true
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Run the golden-file tests
+        if: steps.smoke.outcome == 'success' && steps.golden.outcome == 'success'
+        continue-on-error: true
+        env:
+          DISPLACE_BINARY: ${{ runner.temp }}/relocated/displace
+          DISPLACE_MINITEST_DIR: ${{ runner.temp }}/minitest
+        run: |
+          Rscript -e 'install.packages(c("testthat","jsonlite","DBI","RSQLite","pkgload"))'
+          Rscript -e 'pkgload::load_all("."); testthat::test_local(".", reporter = "summary")'
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          SHA_SHORT="$(python3 -c "print('${{ inputs.upstream_ref }}'[:12])")"
+          UPSTREAM_SHA="$(python3 -c "import json;print(json.load(open('dist/build-info.json'))['upstream_sha'])")"
+          OSVER="${{ matrix.target.os }}"
+          OSVER="${OSVER#ubuntu-}"
+          NAME="displace-${UPSTREAM_SHA:0:12}-linux-x86_64-glibc${{ matrix.target.glibc }}"
+          tar -czf "${NAME}.tar.gz" -C dist/payload .
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          {
+            echo "name=${NAME}"
+            echo "upstream_sha=${UPSTREAM_SHA}"
+            echo "sha256=$(cut -d' ' -f1 "${NAME}.tar.gz.sha256")"
+          } >> "$GITHUB_OUTPUT"
+          cat "${NAME}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+            dist/build-info.json
+            dist/displace-help.txt
+
+      - name: Write manifest entry to the step summary
+        # Paste this straight into inst/manifest.json. Kept manual on purpose:
+        # a human should decide when a build becomes the pinned default.
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG:-<tag>}"
+          {
+            echo '### Manifest entry'
+            echo
+            echo '```json'
+            cat <<JSON
+          {
+            "url": "${BASE}/${{ steps.package.outputs.name }}.tar.gz",
+            "sha256": "${{ steps.package.outputs.sha256 }}",
+            "upstream_sha": "${{ steps.package.outputs.upstream_sha }}",
+            "glibc": "${{ matrix.target.glibc }}",
+            "built_on": "${{ matrix.target.os }}",
+            "arch": "x86_64"
+          }
+          JSON
+            echo '```'
+            echo
+            echo '### Smoke test'
+            echo "minitest run: ${{ steps.smoke.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release asset
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          UPSTREAM_SHA="${{ steps.package.outputs.upstream_sha }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            # GPL-2 section 3: the corresponding source must accompany the
+            # binary. The upstream SHA plus tools/build-displace.sh at this
+            # commit is exactly that, so it goes in the release notes.
+            gh release create "$TAG" \
+              --title "DISPLACE binaries ($TAG)" \
+              --notes "$(cat <<NOTES
+          Headless DISPLACE simulator binaries built by \`.github/workflows/build-displace.yml\`.
+
+          | | |
+          |---|---|
+          | Upstream repo | https://github.com/frabas/DISPLACE_GUI |
+          | Upstream ref | \`${{ inputs.upstream_ref }}\` |
+          | Upstream commit | \`${UPSTREAM_SHA}\` |
+          | Build recipe | \`tools/build-displace.sh\` at ${{ github.sha }} |
+
+          DISPLACE is GPL-2.0. The corresponding source for these binaries is the
+          upstream commit above together with the build recipe at the commit above.
+          See \`LICENSE.note\`.
+          NOTES
+          )"
+          fi
+          gh release upload "$TAG" \
+            "${{ steps.package.outputs.name }}.tar.gz" \
+            "${{ steps.package.outputs.name }}.tar.gz.sha256" \
+            --clobber

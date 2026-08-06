@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^CLAUDE\.md$
+^docs$
+^tools$
+^\.gitignore$
+^LICENSE\.note$
+^scratch$
+^COPYING$
