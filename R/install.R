@@ -118,16 +118,22 @@ select_build <- function(entry, version) {
 }
 
 ## tools::md5sum has no sha256 equivalent in base R, and taking a hard
-## dependency on digest for one call is not worth it. Prefer the system
-## sha256sum, which is present on every Linux host we target, and fall back to
-## digest only if it is missing.
+## dependency on digest for one call is not worth it. Try, in order: digest if
+## it is installed (portable and exact), then sha256sum (Linux), then shasum
+## (macOS, and Git-for-Windows). Windows has none of the utilities, so digest is
+## what makes checksum verification work there at all.
 sha256_of <- function(path) {
+  if (requireNamespace("digest", quietly = TRUE)) {
+    return(digest::digest(path, algo = "sha256", file = TRUE))
+  }
   if (nzchar(Sys.which("sha256sum"))) {
     out <- system2("sha256sum", shQuote(path), stdout = TRUE, stderr = FALSE)
     return(sub("[[:space:]].*$", "", out[1]))
   }
-  if (requireNamespace("digest", quietly = TRUE)) {
-    return(digest::digest(path, algo = "sha256", file = TRUE))
+  if (nzchar(Sys.which("shasum"))) {
+    out <- system2("shasum", c("-a", "256", shQuote(path)),
+                   stdout = TRUE, stderr = FALSE)
+    return(sub("[[:space:]].*$", "", out[1]))
   }
   NA_character_
 }
@@ -307,11 +313,11 @@ install_payload <- function(src, dest, source_desc = src) {
     utils::untar(src, exdir = staging)
   }
 
-  if (!file.exists(file.path(staging, "displace"))) {
+  if (is.null(find_displace_exe(staging))) {
     ## Some tarballs carry a leading directory. Find the executable below and
     ## flatten that level away.
-    found <- list.files(staging, pattern = "^displace$", recursive = TRUE,
-                        full.names = TRUE)
+    found <- list.files(staging, pattern = "^displace(\\.exe)?$",
+                        recursive = TRUE, full.names = TRUE)
     if (!length(found)) {
       stopf(paste0("%s contains no 'displace' executable. Expected the payload ",
                    "staged by tools/build-displace.sh: displace plus its three ",
@@ -325,7 +331,8 @@ install_payload <- function(src, dest, source_desc = src) {
     file.rename(flat, staging)
   }
 
-  Sys.chmod(file.path(staging, "displace"), "0755")
+  ## chmod is a no-op on Windows, and harmless there.
+  Sys.chmod(find_displace_exe(staging), "0755")
 
   unlink(dest, recursive = TRUE)
   dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
@@ -336,8 +343,9 @@ install_payload <- function(src, dest, source_desc = src) {
                          no.. = TRUE),
               dest, recursive = TRUE, copy.mode = TRUE)
   }
-  Sys.chmod(file.path(dest, "displace"), "0755")
-  invisible(file.path(dest, "displace"))
+  exe <- find_displace_exe(dest)
+  Sys.chmod(exe, "0755")
+  invisible(exe)
 }
 
 ## build-displace.sh writes build-info.json both inside the payload and beside
@@ -474,8 +482,8 @@ displace_path <- function(version = NULL, error = TRUE) {
   cache <- displace_cache_dir()
 
   candidate <- function(v) {
-    p <- file.path(cache, v, "displace")
-    if (file.exists(p)) normalizePath(p) else NULL
+    p <- find_displace_exe(file.path(cache, v))
+    if (!is.null(p)) normalizePath(p) else NULL
   }
 
   if (!is.null(version)) {
@@ -533,11 +541,14 @@ displace_installed <- function() {
     return(empty)
   }
   dirs <- list.dirs(cache, recursive = FALSE)
-  dirs <- dirs[file.exists(file.path(dirs, "displace"))]
+  exes <- vapply(dirs, function(d) find_displace_exe(d) %||% NA_character_,
+                 character(1))
+  dirs <- dirs[!is.na(exes)]
+  exes <- exes[!is.na(exes)]
   if (!length(dirs)) {
     return(empty)
   }
-  rows <- lapply(dirs, function(d) {
+  rows <- Map(function(d, exe) {
     info_file <- file.path(d, "displaceR-install.txt")
     sha <- NA_character_
     if (file.exists(info_file)) {
@@ -547,12 +558,12 @@ displace_installed <- function() {
     }
     data.frame(
       version = basename(d),
-      path = file.path(d, "displace"),
+      path = exe,
       upstream_sha = sha,
-      installed_at = file.info(file.path(d, "displace"))$mtime,
+      installed_at = file.info(exe)$mtime,
       stringsAsFactors = FALSE
     )
-  })
+  }, dirs, exes)
   do.call(rbind, rows)
 }
 

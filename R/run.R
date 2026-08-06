@@ -212,8 +212,13 @@ run_displace <- function(input_dir,
   )
 
   res$binary <- binary %||% (if (dry_run) displace_path(error = FALSE) else displace_path())
-  res$command <- paste(shQuote(res$binary %||% "displace"),
-                       paste(shQuote(args), collapse = " "))
+  ## `command` is for display and for pasting into a shell, so it must quote the
+  ## way the host's shell expects: POSIX quoting mangles a Windows path.
+  ## system2() below is given the argument vector directly and does its own
+  ## escaping, so this string never feeds the actual launch.
+  qt <- if (is_windows()) function(x) shQuote(x, type = "cmd") else shQuote
+  res$command <- paste(qt(res$binary %||% displace_exe_name()),
+                       paste(qt(args), collapse = " "))
 
   if (dry_run) {
     return(res)

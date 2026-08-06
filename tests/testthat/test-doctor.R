@@ -11,12 +11,46 @@ test_that("the doctor reports rather than erroring when nothing is set up", {
   })
 })
 
+test_that("a non-Linux host is not reported as a failure", {
+  ## DISPLACE runs on Windows and macOS -- upstream ships an installer and a
+  ## DMG. Only this package's *download* path is Linux-only. Reporting the
+  ## platform as a failure told users with a working install that it was
+  ## unusable, which was wrong.
+  withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
+    d <- displace_doctor(verbose = FALSE)
+    plat <- d[d$check == "platform", ]
+    expect_equal(nrow(plat), 1L)
+    expect_false(plat$status == "fail")
+
+    ## glibc and ldd are Linux concepts; off Linux they must not be reported
+    ## at all rather than reported as inconclusive.
+    if (Sys.info()[["sysname"]] != "Linux") {
+      expect_false("glibc" %in% d$check)
+      expect_false("shared libraries" %in% d$check)
+    }
+  })
+})
+
+test_that("the executable name follows the platform", {
+  expect_equal(displaceR:::displace_exe_name(),
+               if (.Platform$OS.type == "windows") "displace.exe" else "displace")
+
+  ## A cache directory populated on either platform is recognised from either.
+  d <- tempfile(); dir.create(d)
+  expect_null(displaceR:::find_displace_exe(d))
+  file.create(file.path(d, "displace.exe"))
+  expect_equal(basename(displaceR:::find_displace_exe(d)), "displace.exe")
+})
+
 test_that("a missing simulator is a failure, with the ways to fix it", {
   withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
     d <- displace_doctor(verbose = FALSE)
     sim <- d[d$check == "simulator", ]
     expect_equal(sim$status, "fail")
-    expect_match(sim$detail, "install_displace")
+    ## How to get a binary depends on the platform -- install_displace() on
+    ## Linux, upstream's installer elsewhere -- so assert that some route is
+    ## offered rather than pinning the Linux wording.
+    expect_match(sim$detail, "install_displace|DISPLACE_GUI/releases")
     expect_match(sim$detail, "DISPLACE_BINARY")
     expect_false(attr(d, "ok"))
   })

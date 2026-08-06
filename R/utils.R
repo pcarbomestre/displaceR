@@ -99,6 +99,30 @@ sort_versions <- function(v) {
   v[ord]
 }
 
+## DISPLACE runs on Linux, macOS and Windows -- upstream ships a Windows
+## installer and a macOS DMG, and the CMake tree has platform files for all
+## three. Only *this package's build pipeline* is Linux-only, which is a
+## statement about where binaries are built, not about where they run. These
+## helpers keep that distinction straight.
+
+is_windows <- function() identical(.Platform$OS.type, "windows")
+
+## The executable's name, which is the only part of the layout that differs.
+displace_exe_name <- function() if (is_windows()) "displace.exe" else "displace"
+
+## Accept either name wherever a binary is looked up: a directory populated on
+## one platform should still be recognised if it is inspected from another.
+displace_exe_candidates <- function() unique(c(displace_exe_name(), "displace", "displace.exe"))
+
+## Find the simulator inside `dir`, or NULL. Windows installations put the
+## headless simulator next to the GUI, so a `bin/` subdirectory is also checked.
+find_displace_exe <- function(dir) {
+  cand <- c(file.path(dir, displace_exe_candidates()),
+            file.path(dir, "bin", displace_exe_candidates()))
+  hit <- cand[file.exists(cand)]
+  if (length(hit)) hit[[1]] else NULL
+}
+
 host_glibc <- function() {
   ## Only meaningful on glibc Linux. Returns NA elsewhere; callers treat NA as
   ## "cannot tell, do not filter".

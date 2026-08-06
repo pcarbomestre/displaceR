@@ -38,27 +38,42 @@ displace_doctor <- function(verbose = TRUE) {
   ## --- platform -------------------------------------------------------------
   sysname <- Sys.info()[["sysname"]]
   machine <- Sys.info()[["machine"]]
-  if (!identical(sysname, "Linux")) {
-    add("platform", "fail",
-        sprintf(paste0("%s (%s). Published DISPLACE binaries are Linux x86_64 ",
-                       "only. Build from source for this platform, or run on a ",
-                       "Linux host."), sysname, machine))
-  } else if (!identical(machine, "x86_64")) {
-    add("platform", "fail",
-        sprintf(paste0("Linux %s. Published binaries are x86_64 only; build ",
-                       "from source with tools/build-displace.sh."), machine))
+  ## DISPLACE itself runs on all three platforms: upstream ships a Windows
+  ## installer and a macOS DMG. What is Linux-only is this package's *download*
+  ## path, because the build pipeline publishes Linux tarballs and nothing else.
+  ## Those are different claims, and conflating them wrongly reports a working
+  ## Windows or macOS install as unusable -- so a non-Linux host is never a
+  ## failure here, only a note that the binary must come from elsewhere.
+  if (identical(sysname, "Linux")) {
+    add("platform", if (identical(machine, "x86_64")) "ok" else "warn",
+        if (identical(machine, "x86_64")) {
+          sprintf("Linux %s", machine)
+        } else {
+          sprintf(paste0("Linux %s. Prebuilt binaries are x86_64 only; build ",
+                         "from source with tools/build-displace.sh."), machine)
+        })
   } else {
-    add("platform", "ok", sprintf("Linux %s", machine))
+    add("platform", "info",
+        sprintf(paste0("%s (%s). DISPLACE runs here, but install_displace() ",
+                       "only publishes Linux builds -- install upstream's %s and ",
+                       "point DISPLACE_BINARY at the simulator."),
+                sysname, machine,
+                if (is_windows()) "Windows installer" else "macOS package"))
   }
 
-  hg <- host_glibc()
-  add("glibc", if (is.na(hg)) "warn" else "info",
-      if (is.na(hg)) {
-        "could not determine the host glibc version (ldd unavailable)."
-      } else {
-        sprintf(paste0("%s. A binary must be built against this version or ",
-                       "older; a newer one will not start."), hg)
-      })
+  ## glibc only means anything on Linux. Reporting "could not determine" on
+  ## macOS or Windows is noise about a constraint that does not apply there.
+  hg <- NA_character_
+  if (identical(sysname, "Linux")) {
+    hg <- host_glibc()
+    add("glibc", if (is.na(hg)) "warn" else "info",
+        if (is.na(hg)) {
+          "could not determine the host glibc version (ldd unavailable)."
+        } else {
+          sprintf(paste0("%s. A binary must be built against this version or ",
+                         "older; a newer one will not start."), hg)
+        })
+  }
 
   ## --- cache ----------------------------------------------------------------
   cache <- displace_cache_dir()
@@ -93,18 +108,28 @@ displace_doctor <- function(verbose = TRUE) {
   if (is.na(path)) {
     add("simulator", "fail", paste0(
       "no DISPLACE binary found. Either\n",
-      "      install_displace()                       (once a release is published)\n",
-      "      install_displace(from = \"...tar.gz\")       (from a local build)\n",
-      "      Sys.setenv(DISPLACE_BINARY = \"/path/to/displace\")"))
+      if (identical(sysname, "Linux")) paste0(
+        "      install_displace()                       (once a release is published)\n",
+        "      install_displace(from = \"...tar.gz\")       (from a local build)\n") else paste0(
+        "      install upstream's ",
+        if (is_windows()) "Windows installer" else "macOS package",
+        " from\n",
+        "        https://github.com/frabas/DISPLACE_GUI/releases\n"),
+      sprintf("      Sys.setenv(DISPLACE_BINARY = \"/path/to/%s\")",
+              displace_exe_name())))
   } else {
     add("simulator", "ok", path)
 
     ## Shared libraries. This is the check that catches a binary built on a
     ## newer distro than the host, which otherwise fails with a bare
     ## "error while loading shared libraries".
-    missing <- missing_shared_libs(path)
+    missing <- if (identical(sysname, "Linux")) missing_shared_libs(path) else NULL
     if (is.null(missing)) {
-      add("shared libraries", "info", "could not run ldd to check them.")
+      ## Off Linux there is nothing ldd could tell us, so say nothing rather
+      ## than report a check that does not apply as inconclusive.
+      if (identical(sysname, "Linux")) {
+        add("shared libraries", "info", "could not run ldd to check them.")
+      }
     } else if (length(missing)) {
       add("shared libraries", "fail",
           sprintf(paste0("%d unresolved: %s.\n",
