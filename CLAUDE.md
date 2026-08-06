@@ -194,7 +194,9 @@ the matching runner; older Boost/GeographicLib is the main risk.
 -a  <path>    path to the input folder
 -O  <dir>     output directory    (--outdir)
 -s  <name>    simulation name
--i  <n>       number of steps (hours). 8762 ~= 1 year; max 52586 ~= 6 years
+-i  <n>       number of steps (hours). 8762 ~= 1 year. NO maximum: nbsteps is
+              a plain int, unvalidated. The 52586 in upstream's README is a
+              GUI slider limit, not a simulator one. 10 years = 87673.
 -V  <n>       verbosity level
 -p  [=0]      use static paths
 -e  [=1]      export VMSLike data
@@ -313,9 +315,12 @@ Get it green once against a pinned SHA before automating.
 - Never pass `--use-gui`.
 - Expose `--num_threads`; note DISPLACE threads vessel movement internally, so
   do not naively multiply it by `future` workers on a shared server.
-- Step-count sanity: 8762 steps ~= 1 year (hourly); upstream max is 52586
-  (~6 years). Multi-year, multi-replicate runs are slow — that is why upstream
-  recommends HPC.
+- Step-count sanity: 8762 steps ~= 1 year (hourly). There is **no** maximum —
+  `nbsteps` is a plain int parsed from `-i` and never validated. The 52586
+  figure in upstream's README describes a slider in the *GUI's* Setup menu and
+  does not constrain the headless simulator; real case studies exceed it
+  routinely (a 10-year run is `-i 87673`). Multi-year, multi-replicate runs are
+  slow — that is why upstream recommends HPC.
 - Sanity-check that `-O`/`-F` output directories exist before launching; the
   simulator is not consistently defensive about missing paths.
 

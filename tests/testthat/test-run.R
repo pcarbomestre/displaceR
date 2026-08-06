@@ -69,11 +69,24 @@ test_that("input_name defaults to the upstream folder convention", {
   expect_equal(displaceR:::default_input_name("/data/mycase"), "mycase")
 })
 
-test_that("run_displace rejects a step count beyond the simulator's maximum", {
+test_that("run_displace does not impose a maximum step count", {
+  ## This test previously asserted the opposite, which is how the bug survived:
+  ## run_displace() rejected anything above 52586 steps. That figure comes from
+  ## upstream's README describing a slider in the *GUI's* Setup menu; the
+  ## headless simulator parses -i into a plain unvalidated int. Real case
+  ## studies exceed it routinely -- a 10-year run is 87673 steps -- so the cap
+  ## refused workloads DISPLACE runs perfectly well.
+  r <- run_displace("/in", "case", steps = 87673, dry_run = TRUE,
+                    validate = FALSE, binary = exit_binary("true"))
+  expect_equal(r$steps, 87673L)
+  ## Arguments are shell-quoted individually, so the pair reads '-i' '87673'.
+  expect_match(r$command, "'-i'[[:space:]]*'87673'")
+
+  ## Nonsense is still refused.
   expect_error(
-    run_displace("/in", "case", steps = 60000, dry_run = TRUE, validate = FALSE,
+    run_displace("/in", "case", steps = 0, dry_run = TRUE, validate = FALSE,
                  binary = exit_binary("true")),
-    "52586"
+    "positive integer"
   )
 })
 

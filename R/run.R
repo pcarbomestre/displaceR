@@ -5,11 +5,17 @@
 ## are single-dash single-letter (boost::program_options style: "-f name"), not
 ## GNU long options.
 
-## Default step counts, from the simulator's own calendar:
-##   8762 steps ~= 1 year of hourly steps
-##  52586 steps ~= 6 years, the practical upper bound upstream documents
+## 8762 steps ~= 1 year of hourly steps. Used only to report a run's length in
+## years; it constrains nothing.
+##
+## There is deliberately no maximum. An earlier version enforced 52586 steps
+## ("about six years"), taken from upstream's README -- but that sentence
+## describes a slider limit in the *GUI's* Setup menu, and the headless
+## simulator has no such bound: `nbsteps` is a plain int parsed from -i and used
+## only in `while (simModel->timestep() < nbsteps)`, with no validation
+## anywhere. Real case studies routinely exceed it; a 10-year run is -i 87673.
+## The cap made displaceR reject step counts DISPLACE runs perfectly well.
 STEPS_PER_YEAR <- 8762L
-MAX_STEPS <- 52586L
 
 #' Run the DISPLACE simulator
 #'
@@ -29,7 +35,10 @@ MAX_STEPS <- 52586L
 #' @param sim_name Simulation name, DISPLACE's `-s`. Becomes part of every
 #'   output filename, so use it to distinguish replicates.
 #' @param steps Number of hourly steps, DISPLACE's `-i`. `8762` is about one
-#'   year. Values above 52586 (about six years) are rejected by the simulator.
+#'   year, so a ten-year run is `87673`. There is no upper limit: the simulator
+#'   accepts any positive integer. (Upstream's README mentions 52586 as a
+#'   maximum, but that is a slider limit in the GUI's Setup menu and does not
+#'   apply to the headless simulator this package runs.)
 #' @param output_dir Where to write outputs, DISPLACE's `-O`. The simulator
 #'   creates `<output_dir>/DISPLACE_outputs/<input_name>/<scenario>/` beneath
 #'   it. Defaults to a session temporary directory.
@@ -137,10 +146,6 @@ run_displace <- function(input_dir,
   steps <- as.integer(steps)
   if (is.na(steps) || steps < 1L) {
     stopf("steps must be a positive integer.")
-  }
-  if (steps > MAX_STEPS) {
-    stopf(paste0("steps = %d exceeds the simulator's maximum of %d (about six ",
-                 "years of hourly steps)."), steps, MAX_STEPS)
   }
 
   output_dir <- output_dir %||% file.path(tempdir(), "displaceR-run")

@@ -46,7 +46,10 @@ ships.}
 output filename, so use it to distinguish replicates.}
 
 \item{steps}{Number of hourly steps, DISPLACE's `-i`. `8762` is about one
-year. Values above 52586 (about six years) are rejected by the simulator.}
+year, so a ten-year run is `87673`. There is no upper limit: the simulator
+accepts any positive integer. (Upstream's README mentions 52586 as a
+maximum, but that is a slider limit in the GUI's Setup menu and does not
+apply to the headless simulator this package runs.)}
 
 \item{output_dir}{Where to write outputs, DISPLACE's `-O`. The simulator
 creates `<output_dir>/DISPLACE_outputs/<input_name>/<scenario>/` beneath

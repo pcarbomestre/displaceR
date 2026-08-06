@@ -144,7 +144,7 @@ res <- run_displace(
   input_name = "fake",          # the suffix on the *spe_<name> folders
   scenario   = "baseline",      # simusspe_fake/baseline.dat
   sim_name   = "sim1",
-  steps      = 8762             # ~1 year of hourly steps; max 52586 (~6 years)
+  steps      = 8762             # hourly steps: ~1 year. 10 years is 87673.
 )
 
 res
