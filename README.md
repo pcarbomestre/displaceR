@@ -231,6 +231,13 @@ time, conditionally, so each becomes a no-op once upstream fixes it. Neither is
 a fork: the patches are applied to a checkout of the pinned ref and never
 committed. See [`docs/upstream-issues.md`](docs/upstream-issues.md).
 
+## Status
+
+The R package is complete and tested; the simulator binary is not yet published
+as a release, so `install_displace()` needs `from =` or `DISPLACE_BINARY` for
+now. See [`docs/needs-you.md`](docs/needs-you.md) for what is outstanding and
+[`docs/roadmap.md`](docs/roadmap.md) for the known gaps.
+
 ## Licensing
 
 GPL-2, matching upstream. Distributing DISPLACE binaries means shipping the

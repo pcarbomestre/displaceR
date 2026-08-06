@@ -12,6 +12,9 @@ Status of the plan in `CLAUDE.md`, as built.
 
 ## Blocking, in order
 
+Items needing your decision or your access are collected in
+[`needs-you.md`](needs-you.md).
+
 ### 1. Run the build workflow once — **needs you**
 
 `tools/build-displace.sh` has been run end to end on Ubuntu 24.04 and produces a
