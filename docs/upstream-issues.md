@@ -382,9 +382,28 @@ build fails:
 error: use of undeclared identifier 'random_shuffle'
 ```
 
-Note the interaction: **issue 1 and issue 14 cannot both be satisfied by build
-flags.** C++17 is required for `std::shared_mutex` and forbids
-`random_shuffle`.
+Note the interaction, which is the crux of the whole problem: **issues 1 and 14
+are mutually exclusive in the standard.** `std::shared_mutex` (`Population.h:392`)
+requires C++17; `std::random_shuffle` is forbidden by it. No single value of
+`CMAKE_CXX_STANDARD` compiles this tree against a strictly conforming library.
+
+That the project builds at all today is down to standard-library leniency:
+
+| Toolchain | `random_shuffle` at C++17 | `<shared_mutex>` at C++14 | Builds |
+|---|---|---|---|
+| libstdc++ (Linux/gcc) | kept as an extension | available | yes, at C++17 |
+| MSVC (Windows) | kept unless `_HAS_AUTO_PTR_ETC=0` | available | yes, at its C++14 default |
+| libc++ (macOS/clang) | **removed** | guarded out below C++17 | **no, at any level** |
+
+Upstream's `CMakePresets.json` does not override `CMAKE_CXX_STANDARD`, so
+Windows builds at the default 14 and never meets the conflict. Linux needs the
+bump to 17 for `shared_mutex` and gets away with it because libstdc++ still
+supplies `random_shuffle`.
+
+**This means macOS is not a porting problem — it is the only platform whose
+standard library enforces the rules both ways.** Fixing the six call sites
+would make the tree correct C++17 everywhere, and is worth doing for its own
+sake rather than as a macOS workaround.
 
 **Fix:** replace with `std::shuffle` plus an explicit URBG.
 

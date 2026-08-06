@@ -71,7 +71,7 @@ whether **this project can publish a binary** for it.
 | Platform | `install_displace()` | Why |
 |---|---|---|
 | Linux x86_64 | Yes (once a release is published) | Build recipe proven end to end |
-| Windows x64 | Intended | Upstream ships an installer; the headless target needs no Qt |
+| Windows x64 | Intended | Upstream ships an installer and its own vcpkg presets; the headless target needs no Qt, and MSVC's C++14 default sidesteps the conflict below |
 | macOS arm64 | **No** | Blocked on `random_shuffle`, see below |
 
 ### macOS is blocked on a source change, not a build flag
@@ -81,10 +81,15 @@ Silicon. Three upstream problems were found and two are fixable from CMake
 alone (`docs/upstream-issues.md` 13 and 15). The third is not:
 
 `std::random_shuffle` was removed in C++17, and six live call sites remain
-(`diffusion.cpp`, `Vessel.cpp`, `main.cpp`). libstdc++ still provides it as an
-extension, which is why Linux never noticed; libc++ does not. Since issue 1
-*forces* C++17 for `std::shared_mutex`, the two constraints collide: **no
-combination of build flags satisfies both.**
+(`diffusion.cpp`, `Vessel.cpp`, `main.cpp`). Since `std::shared_mutex` *requires*
+C++17, the two constraints are mutually exclusive in the standard: **no value of
+`CMAKE_CXX_STANDARD` compiles this tree against a strictly conforming library.**
+
+Linux and Windows only build because their standard libraries are lenient —
+libstdc++ keeps `random_shuffle` as an extension at C++17, and MSVC never hits
+the conflict because upstream's presets leave the standard at 14. libc++
+enforces both rules, so macOS is the one platform where the latent conflict
+becomes fatal.
 
 **The decision: do not patch it here.** `random_shuffle` draws from `rand()`
 while `std::shuffle` takes a caller-supplied generator, so any substitution
