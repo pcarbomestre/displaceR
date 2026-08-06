@@ -369,9 +369,19 @@ if command -v brew >/dev/null 2>&1; then
   done
 fi
 
-# RPATH is an ELF concept. macOS uses install_name/@loader_path instead, and
-# passing $ORIGIN there is meaningless -- but harmless, and the payload staging
-# below is Linux-only anyway, so keep one code path.
+# The token for "resolve relative to the executable" differs by loader:
+# ELF/ld.so spells it $ORIGIN, dyld spells it @loader_path. Passing $ORIGIN on
+# macOS produces a binary that links fine and then refuses to start with
+# "Library not loaded: @rpath/libcommons.dylib", which reads as a missing
+# library rather than a wrong RPATH.
+if [ "$HOST_OS" = "Darwin" ]; then
+  INSTALL_RPATH='@loader_path'
+  LIBEXT="dylib"
+else
+  INSTALL_RPATH='$ORIGIN'
+  LIBEXT="so"
+fi
+
 log "configuring DISPLACE (headless)"
 cmake -S "$WORKDIR/DISPLACE_GUI" -B "$WORKDIR/DISPLACE_GUI/Build" \
       -DCMAKE_BUILD_TYPE=Release \
@@ -380,7 +390,7 @@ cmake -S "$WORKDIR/DISPLACE_GUI" -B "$WORKDIR/DISPLACE_GUI/Build" \
       -DCMAKE_PREFIX_PATH="$PREFIX${BREW_PREFIXES:+;$BREW_PREFIXES}" \
       -DCMAKE_CXX_FLAGS="$MSQLITECPP_INCLUDE_FLAG" \
       -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
-      -DCMAKE_INSTALL_RPATH='$ORIGIN'
+      -DCMAKE_INSTALL_RPATH="$INSTALL_RPATH"
 
 log "building displace (this is slow: commons is ~100 translation units)"
 cmake --build "$WORKDIR/DISPLACE_GUI/Build" --target displace -j "$JOBS"
@@ -411,18 +421,31 @@ stage_lib() {
     return 0
   fi
   cp "$found" "$PAYLOAD/"
-  # preserve the soname symlink chain for versioned libraries
-  local base soname
+  # Preserve the name the loader will actually ask for. A versioned library is
+  # installed as libfoo.1.2.3.dylib / libfoo.so.1.2.3 but recorded in dependents
+  # under its install-name / SONAME (libfoo.1.dylib, libfoo.so.1), so without
+  # this symlink the payload has the file and still fails to load.
+  local base linkname
   base="$(basename "$found")"
-  soname="$(objdump -p "$found" 2>/dev/null | awk '/SONAME/ {print $2}' | head -1)"
-  if [ -n "$soname" ] && [ "$soname" != "$base" ]; then
-    ln -sf "$base" "$PAYLOAD/$soname"
+  if [ "$HOST_OS" = "Darwin" ]; then
+    # otool -D prints the install name on the second line.
+    linkname="$(basename "$(otool -D "$found" 2>/dev/null | sed -n '2p')" 2>/dev/null)"
+  else
+    linkname="$(objdump -p "$found" 2>/dev/null | awk '/SONAME/ {print $2}' | head -1)"
+  fi
+  if [ -n "$linkname" ] && [ "$linkname" != "$base" ]; then
+    ln -sf "$base" "$PAYLOAD/$linkname"
   fi
 }
 
-stage_lib 'libcommons.so*'    required
-stage_lib 'libformats.so*'    required
-stage_lib 'libmsqlitecpp.so*' required
+# The two platforms put the version on opposite sides of the extension:
+# libmsqlitecpp.so.1 on Linux, libmsqlitecpp.1.dylib on macOS. So the pattern
+# needs a wildcard on both sides of $LIBEXT. Keeping the extension in it at all
+# matters -- a bare "libcommons.*" would also match libcommons.a and stage a
+# static archive that is no use at runtime.
+stage_lib "libcommons*.$LIBEXT*"    required
+stage_lib "libformats*.$LIBEXT*"    required
+stage_lib "libmsqlitecpp*.$LIBEXT*" required
 
 # Also cheap to ship: other headless tools with no Qt/GDAL/CGAL dependency.
 for extra in avaifieldshuffler avaifieldupdater vmsmerger; do
@@ -432,12 +455,18 @@ for extra in avaifieldshuffler avaifieldupdater vmsmerger; do
   fi
 done
 
-log "setting RPATH=\$ORIGIN on staged files"
+log "setting RPATH=$INSTALL_RPATH on staged files"
 for f in "$PAYLOAD"/*; do
   [ -f "$f" ] || continue          # skip the soname symlinks
   [ -L "$f" ] && continue
   if file "$f" 2>/dev/null | grep -q 'ELF'; then
     patchelf --set-rpath '$ORIGIN' "$f"
+  elif file "$f" 2>/dev/null | grep -q 'Mach-O'; then
+    # dyld resolves @rpath entries against the LC_RPATH list. CMake already set
+    # it at link time, but re-assert it here for the same reason patchelf runs
+    # on Linux: staging must not depend on the build tree. A duplicate entry is
+    # harmless, so ignore the error when it is already present.
+    install_name_tool -add_rpath @loader_path "$f" 2>/dev/null || true
   fi
 done
 
@@ -450,15 +479,25 @@ chmod +x "$PAYLOAD/displace"
 # This is the check that actually matters: if it passes with LD_LIBRARY_PATH
 # unset and the build tree still present, it will pass on the user's server.
 
-log "verifying with ldd (LD_LIBRARY_PATH unset)"
-if env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" | grep -q 'not found'; then
-  env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" >&2
-  die "unresolved shared libraries in the staged payload"
+if [ "$HOST_OS" = "Darwin" ]; then
+  # otool -L lists what the binary asks for; whether dyld can satisfy it is only
+  # really answered by running the thing, which the smoke test below does.
+  log "verifying with otool -L"
+  otool -L "$PAYLOAD/displace"
+else
+  log "verifying with ldd (LD_LIBRARY_PATH unset)"
+  if env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" | grep -q 'not found'; then
+    env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" >&2
+    die "unresolved shared libraries in the staged payload"
+  fi
+  env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace"
 fi
-env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace"
 
+# The real relocatability check on both platforms: run the staged binary with
+# the loader's search path cleared. If this works, it works on a user's machine.
 log "smoke test: displace --help"
-env -u LD_LIBRARY_PATH "$PAYLOAD/displace" --help > "$OUTDIR/displace-help.txt" 2>&1 \
+env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH \
+  "$PAYLOAD/displace" --help > "$OUTDIR/displace-help.txt" 2>&1 \
   || die "displace --help failed"
 head -3 "$OUTDIR/displace-help.txt"
 
@@ -466,8 +505,16 @@ head -3 "$OUTDIR/displace-help.txt"
 # 6. Build metadata
 # ---------------------------------------------------------------------------
 
-GLIBC_VERSION="$(ldd --version 2>/dev/null | head -1 | awk '{print $NF}')"
-OS_ID="$( (. /etc/os-release 2>/dev/null && echo "${ID}-${VERSION_ID}") || echo unknown)"
+if [ "$HOST_OS" = "Darwin" ]; then
+  # glibc is a Linux concept; the macOS equivalent constraint is the deployment
+  # target, and the arch matters because a binary built on arm64 will not run on
+  # an Intel Mac without Rosetta.
+  GLIBC_VERSION=""
+  OS_ID="macos-$(sw_vers -productVersion 2>/dev/null || echo unknown)-$(uname -m)"
+else
+  GLIBC_VERSION="$(ldd --version 2>/dev/null | head -1 | awk '{print $NF}')"
+  OS_ID="$( (. /etc/os-release 2>/dev/null && echo "${ID}-${VERSION_ID}") || echo unknown)"
+fi
 
 cat > "$OUTDIR/build-info.json" <<JSON
 {

@@ -70,11 +70,47 @@ whether **this project can publish a binary** for it.
 
 | Platform | `install_displace()` | Why |
 |---|---|---|
-| Linux x86_64 | Yes (once a release is published) | Build recipe proven end to end |
+| Linux x86_64 | Yes (once a release is published) | Built green in CI; artifact checksum verified |
+| macOS arm64 | Buildable locally | Builds and runs natively; see the shim below |
 | Windows x64 | Intended | Upstream ships an installer and its own vcpkg presets; the headless target needs no Qt, and MSVC's C++14 default sidesteps the conflict below |
-| macOS arm64 | **No** | Blocked on `random_shuffle`, see below |
 
-### macOS is blocked on a source change, not a build flag
+### macOS: built, run, and checked against Linux
+
+`tools/build-displace.sh` produces a working **native arm64** binary on Apple
+Silicon (`Mach-O 64-bit executable arm64`, reporting `displace, version 1.6.6
+build 0`). It runs the minitest case study to completion: `lastTStep=49` for a
+50-step run, a valid `dbVersion=4` database, and 39 text outputs.
+
+Four build-time patches are applied, none committed anywhere:
+`cxx17 boost-components random-shuffle msqlitecpp-includes`.
+
+**Does the shim change results?** Two 50-step runs of the same case study with
+the same simulation name give **37 of 39 text outputs bit-identical**. The two
+that differ are `vmslike_sim1.dat` and `vmslikefpingsonly_sim1.dat` -- vessel
+movement traces, which are exactly the threaded code path already documented
+below as DISPLACE's source of run-to-run variation.
+
+The population outputs are the meaningful check, because three of the six
+patched call sites are in `commons/diffusion.cpp`, upstream of them:
+
+| Output | Across two runs |
+|---|---|
+| `popstats_sim1.dat` | identical |
+| `popdyn_annual_indic_sim1.dat` | identical |
+| `popnodes_start_sim1.dat` | identical |
+| `loglike_sim1.dat` | identical |
+| `vmslike_sim1.dat` | differs (pre-existing, threaded) |
+
+If the shim had perturbed the random stream, the population files would drift.
+They do not, which matches the direct check in CI that the shim reproduces
+libstdc++'s permutation exactly for a given seed.
+
+**Still unverified:** a run-for-run comparison of macOS output against Linux
+output on the same inputs. The evidence so far is that the shim is faithful and
+that the Mac binary is self-consistent -- not that the two platforms agree
+number for number.
+
+### Historical note: why macOS looked blocked
 
 The headless simulator **configures and very nearly compiles** on Apple
 Silicon. Three upstream problems were found and two are fixable from CMake
@@ -91,16 +127,21 @@ the conflict because upstream's presets leave the standard at 14. libc++
 enforces both rules, so macOS is the one platform where the latent conflict
 becomes fatal.
 
-**The decision: do not patch it here.** `random_shuffle` draws from `rand()`
-while `std::shuffle` takes a caller-supplied generator, so any substitution
-changes the simulation's random stream. Runs are already not reproducible
-(issue 11); adding a second, silent source of divergence — one that would make
-macOS results differ from Linux results in a package other people depend on —
-is not a call this project should make unilaterally. It belongs upstream, with
-a deliberate choice of generator and seeding.
+**How it is resolved.** The naive fix — `std::shuffle` with an `mt19937` — would
+genuinely have been wrong. `SimModel::initRandom()` seeds the *global* `rand()`
+from the digits in the simulation name, and every other stochastic decision in
+the simulator draws from it, so a separate generator would decouple these six
+call sites from the seed.
 
-Until then macOS users build locally and set `DISPLACE_BINARY`, and
-`displace_doctor()` says so plainly rather than failing.
+`tools/patches/random_shuffle_compat.h` instead reproduces libstdc++'s
+historical algorithm exactly — same backwards iteration, same `rand() % (i+1)`
+index, same swap — and keeps drawing from `rand()`. `.github/workflows/verify-shim.yml`
+compiles it against real libstdc++ at C++14 and asserts the permutations match
+for every seed tested; they do.
+
+The patch is guarded on a compile probe rather than on the OS, so it fires only
+where the standard library actually lacks the function: a no-op on Linux and
+Windows.
 
 ## A CI trap worth not re-learning
 
