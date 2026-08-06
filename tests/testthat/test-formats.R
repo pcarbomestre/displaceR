@@ -100,3 +100,75 @@ test_that("displace_output_files classifies what it finds", {
   expect_equal(files$type[files$file == "popstats_sim1.dat"], "popstats")
   expect_true(is.na(files$type[files$file == "mystery_sim1.dat"]))
 })
+
+## The layouts below were read off the writers in commons/ and simulator/, then
+## checked against the column counts of a real 3000-step minitest run. Where the
+## writers and docs/output_fileformats.md disagree, the writers won.
+
+test_that("fishfarmslogs uses upstream's filename and its real width", {
+  ## Upstream writes "fishfarmslogs_" with the s, while the documentation and
+  ## the receiving parameter both say "fishfarmlogs" — a pattern taken from the
+  ## docs never matches a real file.
+  expect_equal(displaceR:::classify_output("fishfarmslogs_sim1.dat"), "fishfarmslogs")
+  expect_true(is.na(displaceR:::classify_output("fishfarmlogs_sim1.dat")))
+
+  ## 14 columns, not the documented 10: export_fishfarms_indicators appends the
+  ## nitrogen and phosphorus discharges. Verified against a real run.
+  expect_length(displace_output_spec("fishfarmslogs"), 14L)
+})
+
+test_that("popdyn variants have distinct patterns and widths", {
+  ## popdyn_, popdyn_F_, popdyn_SSB_ and popdyn_annual_indic_ all share a
+  ## prefix but are different layouts.
+  expect_equal(displaceR:::classify_output("popdyn_sim1.dat"), "popdyn")
+  expect_equal(displaceR:::classify_output("popdyn_F_sim1.dat"), "popdyn_F")
+  expect_equal(displaceR:::classify_output("popdyn_SSB_sim1.dat"), "popdyn_SSB")
+  expect_true(is.na(displaceR:::classify_output("popdyn_annual_indic_sim1.dat")))
+  expect_true(is.na(displaceR:::classify_output("popdyn_testsim1.dat")))
+
+  expect_length(displace_output_spec("popdyn"), 2L + 14L)      # N at szgroup
+  expect_length(displace_output_spec("popdyn_F"), 2L + 11L)    # F at age
+  expect_length(displace_output_spec("popdyn_SSB"), 2L + 14L)  # SSB at szgroup
+})
+
+test_that("popnodes_impact and its per_szgroup sibling do not collide", {
+  ## "^popnodes_impact_" also matches popnodes_impact_per_szgroup_, which would
+  ## silently apply a 6-column layout to a wider file.
+  expect_equal(displaceR:::classify_output("popnodes_impact_sim1.dat"),
+               "popnodes_impact")
+  expect_equal(displaceR:::classify_output("popnodes_impact_per_szgroup_sim1.dat"),
+               "popnodes_impact_per_szgroup")
+
+  ## Despite the name, the trailing block is per-population: upstream fetches
+  ## the szgroup vector and then writes impact_per_pop (Node.cpp:2089).
+  cols <- displace_output_spec("popnodes_impact_per_szgroup", nbpops = 3L)
+  expect_length(cols, 5L + 3L)
+  expect_equal(cols[6:8], c("impact_sp0", "impact_sp1", "impact_sp2"))
+})
+
+test_that("vmslikefpingsonly is nine key columns plus the size groups", {
+  expect_length(displace_output_spec("vmslikefpingsonly"), 9L + 14L)
+})
+
+test_that("reports and diagnostics are never classified as tables", {
+  ## memstats is free text ("*** Memory Statistics:"); the freq_* files are
+  ## diagnostic histograms. Reading either with a column layout is meaningless.
+  expect_true(is.na(displaceR:::classify_output("memstats_sim1.dat")))
+  expect_true(is.na(displaceR:::classify_output("freq_cpuesim1.dat")))
+  expect_true(is.na(displaceR:::classify_output("freq_distancesim1.dat")))
+  expect_true(is.na(displaceR:::classify_output("freq_profitsim1.dat")))
+})
+
+test_that("shipslogs treats the fields upstream writes as decimals as numeric", {
+  ## shiptype and nb_units are documented as integers but written with
+  ## setprecision(3) fixed, i.e. "1.000", which an integer colClass rejects.
+  d <- tempfile()
+  dir.create(d)
+  writeLines(
+    "0 0 10.122 54.347 1.000 0 0.000 200.000 9.000 0.100 0.200 0.000 200.000 2250.000 20.000 50.000 0.000",
+    file.path(d, "shipslogs_sim1.dat")
+  )
+  df <- read_displace_output(d, "shipslogs")
+  expect_equal(ncol(df), 17L)
+  expect_equal(df$shiptype, 1)
+})

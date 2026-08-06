@@ -227,7 +227,26 @@ holds, not after the filename.
 
 ---
 
-## 8. `find_package(GDAL)` sits outside the `WITHOUT_GUI` guard
+## 8. `fishfarmslogs` filename and width both differ from the documentation
+
+Two separate mismatches in one file:
+
+* **Filename.** `simulator/main.cpp:1843` writes `fishfarmslogs_<sim>.dat`, with
+  an `s` on "farms". `docs/output_fileformats.md` calls it `fishfarmlogs_*.dat`,
+  and so does the receiving parameter of
+  `Fishfarm::export_fishfarms_indicators(ofstream& fishfarmlogs, ...)`. A reader
+  written from the documentation silently never matches the file.
+* **Width.** The documentation lists 10 columns, ending at
+  `fishfarm_annualprofit`. The writer emits 14: it appends
+  `net_discharge_N`, `net_discharge_P`, `cumul_net_discharge_N` and
+  `cumul_net_discharge_P`. Confirmed against a real 3000-step run.
+
+**Suggested fix:** update `docs/output_fileformats.md` for both, or rename the
+output file to match the documented name.
+
+---
+
+## 9. `find_package(GDAL)` sits outside the `WITHOUT_GUI` guard
 
 `cmake/dependencies.cmake` requires GDAL 1.11 unconditionally, so `libgdal-dev`
 must be installed to *configure* a headless build — but GDAL does not appear in
@@ -240,7 +259,7 @@ PROJ, GEOS, libtiff and curl) from headless builds entirely.
 
 ---
 
-## 9. `-DDISABLE_IPC=On` does not link
+## 10. `-DDISABLE_IPC=On` does not link
 
 Inherited from CLAUDE.md Phase 0 and not re-tested here. The option excludes the
 IPC sources, but `thread_vessels.cpp` and `biomodule2.cpp` still reference
@@ -254,7 +273,7 @@ displaceR simply leaves IPC enabled; it is inert unless `--use-gui` is passed.
 
 ---
 
-## 10. `--indb` runs but does not reproduce the text-input results
+## 11. `--indb` runs but does not reproduce the text-input results
 
 `minitest` ships `baseline.db` and `areaclosure.db`, SQLite databases holding
 the whole case study in 30 normalized tables, loaded with `--indb`. The run

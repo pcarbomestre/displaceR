@@ -12,7 +12,9 @@
 ## schema in the wild today, so it has nothing to dispatch on yet; the argument
 ## is there so that adding a second layout is a data change, not a rewrite.
 
+## simulator/values.h: NBSZGROUP 14, NBAGE 11.
 N_SZGROUPS <- 14L
+N_AGES <- 11L
 
 OUTPUT_SPECS <- list(
   vmslike = list(
@@ -127,11 +129,53 @@ OUTPUT_SPECS <- list(
     cols = c("tstep", "vesselid", "pop", "remaining_quota", "discarded_if_zero"),
     types = c("i", "c", "i", "d", "d")
   ),
-  fishfarmlogs = list(
-    pattern = "^fishfarmlogs_",
+  fishfarmslogs = list(
+    ## Upstream writes "fishfarmslogs_", with the s — the documentation and the
+    ## receiving parameter name both say "fishfarmlogs", so a pattern taken from
+    ## the docs never matches a real file.
+    pattern = "^fishfarmslogs_",
+    ## Also four columns wider than documented: Fishfarm::export_fishfarms_indicators
+    ## (commons/Fishfarm.cpp) appends the nitrogen and phosphorus discharges.
     cols = c("tstep", "node", "long", "lat", "farmtype", "farmid", "meanw_kg",
-             "fish_harvested_kg", "eggs_harvested_kg", "fishfarm_annualprofit"),
-    types = c("i", "i", "d", "d", "i", "i", "d", "d", "d", "d")
+             "fish_harvested_kg", "eggs_harvested_kg", "fishfarm_annualprofit",
+             "net_discharge_N", "net_discharge_P",
+             "cumul_net_discharge_N", "cumul_net_discharge_P"),
+    types = c("i", "i", "d", "d", "d", "c", "d", "d", "d", "d",
+              "d", "d", "d", "d")
+  ),
+  nodes_envt = list(
+    pattern = "^nodes_envt_",
+    cols = c("tstep", "node", "marine_landscape", "salinity", "sst", "wind",
+             "nitrogen", "phosphorus", "oxygen", "dissolved_carbon",
+             "bathymetry", "shipping_density", "silt_fraction"),
+    types = c("i", "i", "i", "d", "d", "d", "d", "d", "d", "d", "d", "d", "d")
+  ),
+  quotasuptake = list(
+    pattern = "^quotasuptake_",
+    cols = c("tstep", "pop", "global_quota_uptake", "current_tac"),
+    types = c("i", "i", "d", "d")
+  ),
+  popdyn_F = list(
+    pattern = "^popdyn_F_",
+    ## F at age, cumulated over months — note the comment in
+    ## Population::export_popdyn_F warning that these are cumulative.
+    cols = c("tstep", "stock", sprintf("F_age%d", 0:(N_AGES - 1L))),
+    types = c("i", "i", rep("d", N_AGES))
+  ),
+  popdyn_SSB = list(
+    pattern = "^popdyn_SSB_",
+    cols = c("tstep", "stock", sprintf("SSB_szgroup%d", 0:(N_SZGROUPS - 1L))),
+    types = c("i", "i", rep("d", N_SZGROUPS))
+  ),
+  popnodes_cumdiscardsratio = list(
+    pattern = "^popnodes_cumdiscardsratio_",
+    cols = c("tstep", "node", "long", "lat", "cumdiscardsratio"),
+    types = c("i", "i", "d", "d", "d")
+  ),
+  popnodes_nbchoked = list(
+    pattern = "^popnodes_nbchoked_",
+    cols = c("tstep", "node", "long", "lat", "nbchoked"),
+    types = c("i", "i", "d", "d", "d")
   ),
   shipslogs = list(
     pattern = "^shipslogs_",

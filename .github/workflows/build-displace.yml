@@ -62,7 +62,7 @@ jobs:
           # unit_test_framework REQUIRED even with WITH_TESTS=Off.
           # libgdal-dev is a configure-time formality; GDAL is not linked.
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake git patchelf file binutils \
+            build-essential cmake git patchelf file binutils sqlite3 \
             libboost-all-dev libgeographiclib-dev libgdal-dev libsqlite3-dev
 
       - name: Record toolchain
@@ -101,28 +101,63 @@ jobs:
           env -u LD_LIBRARY_PATH ./displace --help | head -20
 
       - name: Smoke test against DISPLACE_input_minitest
-        # Best effort. The minitest dataset is not versioned anywhere stable, so
-        # a failure to fetch it must not fail the build — but if we do get it,
-        # a short run is by far the strongest signal the binary is usable.
+        # The strongest signal that the binary is usable. Best effort on the
+        # clone: if the dataset cannot be fetched we skip rather than fail.
+        #
+        # Note the parameterisation name is "fake", not "minitest" — the folders
+        # in that dataset are simusspe_fake/, vesselsspe_fake/ and so on.
         id: smoke
         continue-on-error: true
         run: |
-          set -euo pipefail
+          set -uo pipefail
           cd "$RUNNER_TEMP"
-          if git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git minitest 2>/dev/null; then
-            mkdir -p out
-            cd "$RUNNER_TEMP/relocated"
-            env -u LD_LIBRARY_PATH ./displace \
-              -f minitest -F baseline \
-              -a "$RUNNER_TEMP/minitest" \
-              -O "$RUNNER_TEMP/out" \
-              -s smoke -i 25 -V 0 \
-              --disable-crash-handler 2>&1 | tail -40
-            echo "--- outputs produced ---"
-            find "$RUNNER_TEMP/out" -type f | head -40
-          else
+          if ! git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git minitest 2>/dev/null; then
             echo "minitest dataset unavailable; skipping the run smoke test"
             exit 1
+          fi
+
+          mkdir -p out
+          cd "$RUNNER_TEMP/relocated"
+          set +e
+          env -u LD_LIBRARY_PATH ./displace \
+            -f fake -F baseline \
+            -a "$RUNNER_TEMP/minitest" \
+            -O "$RUNNER_TEMP/out" \
+            -s smoke -i 50 -V 0 \
+            --disable-crash-handler > "$RUNNER_TEMP/smoke.log" 2>&1
+          RC=$?
+          set -e
+          tail -20 "$RUNNER_TEMP/smoke.log"
+          echo "exit status: $RC"
+
+          # DISPLACE segfaults during static destruction whenever SQLite output
+          # is enabled, *after* the simulation has finished and everything is
+          # written (docs/upstream-issues.md, issue 3). So a non-zero status is
+          # not by itself a failure here. What matters is whether the run
+          # actually completed, which the output database records.
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 139 ]; then
+            echo "::error::displace exited with $RC, which is not the known teardown crash"
+            exit 1
+          fi
+
+          DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_smoke_out.db"
+          if [ ! -f "$DB" ]; then
+            echo "::error::no output database at $DB"
+            exit 1
+          fi
+          echo "--- database check ---"
+          sqlite3 "$DB" "PRAGMA integrity_check;"
+          LAST="$(sqlite3 "$DB" "SELECT Value FROM Metadata WHERE Key='lastTStep';")"
+          echo "lastTStep=$LAST (requested 50 steps)"
+          if [ -z "$LAST" ] || [ "$LAST" -lt 48 ]; then
+            echo "::error::the run did not reach its step horizon"
+            exit 1
+          fi
+
+          echo "--- outputs produced ---"
+          find "$RUNNER_TEMP/out" -type f | wc -l
+          if [ "$RC" -eq 139 ]; then
+            echo "::warning::displace exited 139 in teardown; the run completed and outputs are intact (upstream issue 3)"
           fi
 
       - name: Golden-file regression against the new binary
@@ -143,6 +178,7 @@ jobs:
         env:
           DISPLACE_BINARY: ${{ runner.temp }}/relocated/displace
           DISPLACE_MINITEST_DIR: ${{ runner.temp }}/minitest
+          DISPLACE_INPUT_NAME: fake
         run: |
           Rscript -e 'install.packages(c("testthat","jsonlite","DBI","RSQLite","pkgload"))'
           Rscript -e 'pkgload::load_all("."); testthat::test_local(".", reporter = "summary")'
