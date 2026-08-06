@@ -91,23 +91,30 @@ that is Linux-only.
 
 ### Install the simulator
 
-**On Windows and macOS, use upstream's own package** — it is prebuilt, needs no
-prerequisites, and is the fastest route to a working install:
-
-```r
-# Install from https://github.com/frabas/DISPLACE_GUI/releases (Windows .exe)
-# or upstream's Google Drive (macOS .dmg), then point R at the simulator.
-# Note this is the headless `displace` executable, not the GUI application:
-Sys.setenv(DISPLACE_BINARY = "C:/Program Files/DISPLACE/displace.exe")
-displace_doctor()       # confirms R can see and run it
-```
-
-**On Linux**, once per machine or per shared cache directory:
+On **Linux (x86_64)** and **macOS (Apple Silicon)**, once per machine or per
+shared cache directory:
 
 ```r
 install_displace()      # downloads, verifies sha256, unpacks, chmod +x
 displace_version()      # reports the binary AND the upstream commit it came from
 ```
+
+`install_displace()` picks the right build for your platform: Linux builds are
+selected by glibc version, macOS and Windows by architecture.
+
+**Other platforms** — Windows, Intel Macs, non-x86_64 Linux — have no prebuilt
+binary yet. Two routes work:
+
+```r
+# 1. Use a DISPLACE you already have (e.g. upstream's Windows installer).
+#    Point at the headless `displace` executable, not the GUI application:
+Sys.setenv(DISPLACE_BINARY = "C:/Program Files/DISPLACE/displace.exe")
+
+# 2. Or build one:  ./tools/build-displace.sh --ref <upstream-sha>
+install_displace(from = "displace-<sha>-<platform>.tar.gz")
+```
+
+`displace_doctor()` reports which of these applies on your machine.
 
 `install_displace()` writes to `tools::R_user_dir("displaceR", "cache")`. Point
 `DISPLACER_CACHE` somewhere shared if several users on a server should share one

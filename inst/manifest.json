@@ -54,6 +54,12 @@
           "sha256": "f1f2b9327fc4a3816555ce4decee68173e115ce50b549c426e571e21ae487fa1",
           "arch": "x86_64",
           "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb/displace-7f2656fb7cd4-macos-arm64.tar.gz",
+          "sha256": "51f8176a35f563978a757060cc10f82cdcd3a271722a302f060f42b0d3330ac6",
+          "arch": "arm64",
+          "built_on": "macos-14"
         }
       }
     }

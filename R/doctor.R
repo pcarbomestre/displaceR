@@ -53,12 +53,28 @@ displace_doctor <- function(verbose = TRUE) {
                          "from source with tools/build-displace.sh."), machine)
         })
   } else {
+    ## Whether a prebuilt binary exists for this platform is a fact about the
+    ## manifest, not about the operating system -- so ask the manifest rather
+    ## than hardcoding "Linux only", which went stale the moment macOS builds
+    ## were published.
+    have <- tryCatch({
+      m <- read_manifest()
+      entry <- if (!is.null(m$default)) m$versions[[m$default]] else NULL
+      keys <- host_build_keys()
+      length(keys) && any(keys %in% names(entry$builds %||% list()))
+    }, error = function(e) FALSE)
+
     add("platform", "info",
-        sprintf(paste0("%s (%s). DISPLACE runs here, but install_displace() ",
-                       "only publishes Linux builds -- install upstream's %s and ",
-                       "point DISPLACE_BINARY at the simulator."),
-                sysname, machine,
-                if (is_windows()) "Windows installer" else "macOS package"))
+        if (have) {
+          sprintf("%s (%s). A prebuilt binary is available: install_displace().",
+                  sysname, machine)
+        } else {
+          sprintf(paste0("%s (%s). DISPLACE runs here, but no prebuilt binary ",
+                         "is published for it -- build one with ",
+                         "tools/build-displace.sh, or point DISPLACE_BINARY at ",
+                         "a simulator you already have."),
+                  sysname, machine)
+        })
   }
 
   ## glibc only means anything on Linux. Reporting "could not determine" on
