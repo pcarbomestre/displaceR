@@ -90,7 +90,7 @@ test_that("run_displace refuses to launch on failed validation", {
   file.remove(file.path(fx$dir, paste0("simusspe_", fx$input_name), "config.dat"))
 
   expect_error(
-    run_displace(fx$dir, fx$input_name, steps = 10, binary = "/bin/true",
+    run_displace(fx$dir, fx$input_name, steps = 10, binary = exit_binary("true"),
                  output_dir = tempfile(), echo = FALSE),
     "input validation failed"
   )

@@ -22,6 +22,21 @@ withr_env <- function(vars, code) {
   force(code)
 }
 
+## Trivial binaries that stand in for the simulator: one exits 0, one exits 1.
+## Their location is not portable -- /bin/true and /bin/false on Linux, but
+## /usr/bin on macOS, where /bin has neither -- and a wrong path makes
+## `system2()` fail with "error in running command", which looks like a package
+## bug rather than a missing file. Resolve them against PATH instead.
+exit_binary <- function(name = c("true", "false")) {
+  name <- match.arg(name)
+  found <- Sys.which(name)[[1]]
+  if (nzchar(found)) return(unname(found))
+  for (cand in file.path(c("/bin", "/usr/bin"), name)) {
+    if (file.exists(cand)) return(cand)
+  }
+  testthat::skip(paste0("no `", name, "` executable on this host"))
+}
+
 ## Build a minimal but structurally complete input tree, sufficient for
 ## validate_displace_input() to pass. It is not a runnable case study -- the
 ## per-population and per-metier data files are empty -- but it exercises every

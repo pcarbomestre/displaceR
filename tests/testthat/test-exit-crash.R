@@ -38,7 +38,7 @@ fake_run <- function(steps = 100L, last_tstep = 99L, status = 139L,
   }
 
   structure(
-    list(binary = "/bin/false", args = character(), command = "displace ...",
+    list(binary = exit_binary("false"), args = character(), command = "displace ...",
          input_dir = "in", input_name = "case", scenario = "baseline",
          sim_name = "sim1", steps = as.integer(steps), output_dir = out,
          output_path = leaf, db_path = db, status = as.integer(status),
@@ -100,7 +100,7 @@ test_that("run_displace errors, not warns, when a real crash left no database", 
   dir.create(input)
   expect_error(
     run_displace(input, "case", steps = 10, validate = FALSE,
-                 output_dir = tempfile(), binary = "/bin/false", echo = FALSE),
+                 output_dir = tempfile(), binary = exit_binary("false"), echo = FALSE),
     "DISPLACE exited with status"
   )
 })
@@ -113,14 +113,14 @@ test_that("--indb skips text-tree validation but checks the database exists", {
   file.create(file.path(input, "case.db"))
 
   r <- run_displace(input, "case", steps = 10, indb = "case.db",
-                    dry_run = TRUE, binary = "/bin/true")
+                    dry_run = TRUE, binary = exit_binary("true"))
   expect_true("--indb" %in% r$args)
   expect_equal(r$args[which(r$args == "--indb") + 1L], "case.db")
 
   ## A path that does not resolve is caught up front, naming the resolution rule.
   expect_error(
     run_displace(input, "case", steps = 10, indb = "missing.db",
-                 binary = "/bin/true", output_dir = tempfile()),
+                 binary = exit_binary("true"), output_dir = tempfile()),
     "relative to input_dir"
   )
 })
@@ -142,7 +142,7 @@ test_that("a completed run is forgiven end to end whatever the status", {
   ## return rather than error, for a status it has never seen before.
   skip_unless_sqlite()
   ## fake_run() has already written a complete-looking database under
-  ## output_dir, so /bin/false standing in for the binary reproduces exactly
+  ## output_dir, so a `false` standing in for the binary reproduces exactly
   ## the situation: non-zero exit, finished run.
   fr <- fake_run(steps = 100L, last_tstep = 99L, status = 134L)
   input <- tempfile()
@@ -152,7 +152,7 @@ test_that("a completed run is forgiven end to end whatever the status", {
     res <- run_displace(
       input_dir = input, input_name = "case", steps = 100,
       validate = FALSE, echo = FALSE,
-      binary = "/bin/false", output_dir = fr$output_dir
+      binary = exit_binary("false"), output_dir = fr$output_dir
     ),
     "the run completed"
   )

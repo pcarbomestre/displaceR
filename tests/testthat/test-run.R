@@ -72,7 +72,7 @@ test_that("input_name defaults to the upstream folder convention", {
 test_that("run_displace rejects a step count beyond the simulator's maximum", {
   expect_error(
     run_displace("/in", "case", steps = 60000, dry_run = TRUE, validate = FALSE,
-                 binary = "/bin/true"),
+                 binary = exit_binary("true")),
     "52586"
   )
 })
@@ -98,7 +98,7 @@ test_that("run_displace creates the output tree before launching", {
   dir.create(input)
   suppressMessages(
     run_displace(input, "minitest", steps = 10, validate = FALSE,
-                 output_dir = d, binary = "/bin/true", echo = FALSE)
+                 output_dir = d, binary = exit_binary("true"), echo = FALSE)
   )
   expect_true(dir.exists(file.path(d, "DISPLACE_outputs", "minitest", "baseline")))
 })
@@ -108,7 +108,7 @@ test_that("a non-zero exit status is an error carrying the command", {
   dir.create(input)
   expect_error(
     run_displace(input, "minitest", steps = 10, validate = FALSE,
-                 output_dir = tempfile(), binary = "/bin/false", echo = FALSE),
+                 output_dir = tempfile(), binary = exit_binary("false"), echo = FALSE),
     "DISPLACE exited with status"
   )
 })
@@ -116,7 +116,7 @@ test_that("a non-zero exit status is an error carrying the command", {
 test_that("a missing input_dir is caught before anything is launched", {
   expect_error(
     run_displace("/no/such/input", "minitest", steps = 10, validate = FALSE,
-                 binary = "/bin/true"),
+                 binary = exit_binary("true")),
     "input_dir does not exist"
   )
 })
