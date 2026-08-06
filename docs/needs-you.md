@@ -53,41 +53,41 @@ another entry.
 
 ---
 
-## 3. Should I file the upstream issues?
+## 3. Upstream is read-only — settled, nothing to decide
 
-`docs/upstream-issues.md` documents twelve findings against
-`frabas/DISPLACE_GUI` at `7f2656fb`, each with a reproduction and a suggested
-fix. Several are significant:
+`frabas/DISPLACE_GUI` is never modified: no issues, no pull requests, no
+branches. Same for `studiofuga/mSqliteCpp` and `greg7mdp/sparsepp`. Every fix
+lives in this repository, as a conditional build-time patch against a throwaway
+checkout. See the hard constraint at the top of `CLAUDE.md`.
 
-- upstream does not compile at all unpatched (C++14 vs C++17)
-- every SQLite run segfaults at exit
-- an infinite loop in `export_popnodes_metrealtimeclosed`
-- runs are not reproducible
+`docs/upstream-issues.md` therefore reads as an **engineering record** of what
+is worked around and why, not as a queue of reports. Its value is that when a
+build breaks after an upstream bump, the failure is already described.
 
-Filing these would help the project and reduce what `displaceR` has to work
-around. But it means posting publicly under your GitHub account, so it is your
-call. Tell me and I will open them; say nothing and I will leave it.
-
-The two build fixes are also a small, clean pull request if you would rather
-contribute than just report.
+The practical consequence: problems that would "obviously" be fixed upstream --
+`DISABLE_IPC` not linking, `find_package(GDAL)` outside the `WITHOUT_GUI`
+guard, `random_shuffle` at C++17 -- are all handled here instead, and each patch
+self-disables if upstream ever changes on its own.
 
 ---
 
-## 4. Worth asking the maintainer two things
+## 4. Two questions that must be answered from our side
 
-Both would meaningfully simplify this project.
+Both were previously framed as things to ask the maintainer. Under the
+read-only rule they become work for this repository.
 
-**Would he publish headless Linux binaries in official releases?** That would
-delete the entire build pipeline -- layer 2 of the architecture -- and leave
-`displaceR` a pure-R package with nothing to maintain but the readers.
+**Binary distribution is ours to run.** There is no route where upstream
+publishes headless binaries for us, so the build pipeline in
+`.github/workflows/build-displace.yml` is permanent infrastructure rather than
+a stopgap. Linux is green; macOS builds locally; Windows is drafted.
 
-**How is `baseline.db` generated?** `minitest` ships the whole case study as 30
-normalized SQLite tables, loadable with `--indb`. If that path were
-trustworthy, one `RSQLite` writer would replace the ~150 text-file writers and
-most of the remaining roadmap. It runs, but it does not reproduce the
-text-input results (`PopValues` comes out empty), and I cannot tell whether the
-shipped database is simply stale or the loader is incomplete. A database
-regenerated from the current text inputs would settle it.
+**`baseline.db` and the `--indb` path.** `minitest` ships the whole case study
+as 30 normalized SQLite tables, and one `RSQLite` writer would replace ~150
+text-file formatters -- a large prize. But `--indb` does not reproduce the
+text-input results (`PopValues` comes out empty), and asking how the shipped
+database was generated is not available to us. Settling it means generating a
+database from the current text inputs ourselves and diffing the two runs. That
+is a concrete, self-contained experiment; it just has to be done here.
 
 ---
 

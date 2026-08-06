@@ -193,6 +193,25 @@ if grep -q "$BOOST_LINE" "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake" 2>/dev
   PATCHES_APPLIED="${PATCHES_APPLIED}boost-components "
 fi
 
+# Patch 1bb: GDAL is a configure-time formality.
+#
+# cmake/dependencies.cmake:21 has find_package(GDAL REQUIRED 1.11) OUTSIDE the
+# WITHOUT_GUI guard, so libgdal-dev must be installed merely to configure --
+# yet GDAL never appears in the linked binary (confirmed by ldd on Linux). It is
+# a heavy dependency to demand for nothing, and on macOS it is a slow Homebrew
+# build.
+#
+# Only relax it when GDAL is genuinely absent, so a machine that has it keeps
+# the original configure path and this stays a no-op in CI.
+if ! pkg-config --exists gdal 2>/dev/null && ! command -v gdal-config >/dev/null 2>&1; then
+  if grep -q 'find_package(GDAL REQUIRED 1.11)' "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake" 2>/dev/null; then
+    log "patching cmake/dependencies.cmake: GDAL is not linked, making it optional"
+    sed_i 's/find_package(GDAL REQUIRED 1.11)/find_package(GDAL QUIET)/' \
+        "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake"
+    PATCHES_APPLIED="${PATCHES_APPLIED}gdal-optional "
+  fi
+fi
+
 # Patch 1c: std::random_shuffle, removed in C++17.
 #
 # Upstream needs C++17 for std::shared_mutex (patch 1) but still calls

@@ -5,10 +5,16 @@ All verified against `frabas/DISPLACE_GUI` at commit
 glibc 2.39, CMake 3.28, Boost 1.83) and run against the
 `frabas/DISPLACE_input_minitest` dataset at `22d98622`.
 
-Each of these is worth reporting upstream. None of them is worked around by
-forking: the two build failures are patched at build time by
-`tools/build-displace.sh`, and the runtime crash is detected and handled in
-`run_displace()`.
+> **This file is an internal record, not a list of reports to file.**
+> `frabas/DISPLACE_GUI` is read-only for this project: nothing is filed against
+> it and nothing is pushed to it. See the hard constraint at the top of
+> `CLAUDE.md`. What follows documents what displaceR works around, why, and how
+> to recognise each problem when it resurfaces.
+
+None of these is worked around by forking: the build failures are patched at
+build time by `tools/build-displace.sh` against a throwaway checkout, the
+runtime crash is detected and handled in `run_displace()`, and each patch is
+conditional so it disappears by itself if upstream ever changes.
 
 ---
 

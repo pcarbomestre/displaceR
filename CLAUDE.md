@@ -11,9 +11,30 @@ Constraint: the user cannot build DISPLACE manually on their server. They run R
 via Positron on that server. DISPLACE is the only model of interest — this is
 not negotiable, alternatives (e.g. `marlin`) have been considered and rejected.
 
+## Hard constraint — upstream is read-only
+
+**`frabas/DISPLACE_GUI` must never be modified.** No issues, no pull requests,
+no branches, no comments — nothing is pushed to, or filed against, that
+repository or any other upstream project (`studiofuga/mSqliteCpp`,
+`greg7mdp/sparsepp`). Upstream is consumed at a pinned SHA and nothing more.
+
+Every fix, workaround and piece of documentation lives **in this repository**:
+
+- Build-time patches applied to a throwaway checkout by
+  `tools/build-displace.sh` — conditional, never committed to any upstream tree,
+  and self-disabling if upstream ever changes.
+- Compatibility sources under `tools/patches/`.
+- Findings recorded in `docs/upstream-issues.md`, which is an **internal
+  engineering record of what we work around and why** — not a to-do list of
+  reports to send. Read it that way.
+
+This is not a licensing or etiquette question; it is a project rule. If a
+problem seems to need an upstream change, the answer is to handle it here or to
+document it as a known limitation.
+
 ## Upstream
 
-- Repo: https://github.com/frabas/DISPLACE_GUI (GPL-2.0)
+- Repo: https://github.com/frabas/DISPLACE_GUI (GPL-2.0) — **read-only, see above**
 - Verified against HEAD `7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de` (2026-08-05)
 - Binary self-reports as `version 1.6.6 build 0`
 
@@ -128,14 +149,16 @@ cmake --build DISPLACE_GUI/Build --target displace
   `thread_vessels.cpp` and `biomodule2.cpp` still reference
   `OutputQueueManager::enqueue`, `mOutQueue`, and `guiSendUpdateCommand`, so the
   link fails. **Leave IPC enabled** — it is inert unless `--use-gui` is passed.
-  Worth filing upstream; likely a small fix in `commons/CMakeLists.txt`.
+  Would be a small fix in `commons/CMakeLists.txt`, but upstream is read-only:
+  the build script leaves IPC enabled instead (it is inert without `--use-gui`).
 - **`WITHOUT_GUI=On` drops Qt6 and CGAL entirely** — they are gated behind it in
   `cmake/dependencies.cmake`. It skips `QMapControl`, `qtcommons`, `qtgui`, the
   editors, the scheduler, and `tests`.
 - **GDAL is a configure-time formality only.** `find_package(GDAL REQUIRED 1.11)`
   sits *outside* the `WITHOUT_GUI` guard, so `libgdal-dev` must be present to
   configure — but GDAL does **not** appear in the binary's `ldd` output and is
-  not needed at runtime. Optional upstream PR: move that line inside the guard.
+  not needed at runtime. Handled here instead: the build script makes the GDAL
+  lookup optional at configure time, so `libgdal-dev` is not a dependency.
 - **vcpkg is unnecessary on Linux.** The repo ships `vcpkg.json` and a
   `vcpkg-overlays/msqlitecpp` port, but apt + a source build of msqlitecpp is far
   faster and less fragile. Keep vcpkg in mind only if targeting Windows/macOS.
@@ -320,12 +343,15 @@ upstream SHA plus the build workflow. Document in release notes.
 - [ ] Server's `cat /etc/os-release; ldd --version; uname -m` — sets runner target
 - [ ] Does `R CMD config CXX` work on the server? Does
       `devtools::install_github("DanOvando/marlin")` succeed? (toolchain canary)
-- [ ] Run the minitest dataset and verify output correctness (no data available
-      during Phase 0 — https://displace-project.org/blog/download/)
-- [ ] File upstream issue: `DISABLE_IPC` link failure
-- [ ] Optional upstream PR: move `find_package(GDAL)` inside the `WITHOUT_GUI` guard
-- [ ] Ask maintainer (frabas) whether he'd publish headless Linux simulator
-      binaries in official releases — that would delete Phase 1 entirely
+- [x] Run the minitest dataset and verify output correctness — done; the golden
+      test passes and CI smoke-tests every build against it
+- [x] ~~File upstream issue: `DISABLE_IPC` link failure~~ — upstream is
+      read-only. Handled here: IPC stays enabled, inert without `--use-gui`.
+- [x] ~~Upstream PR: move `find_package(GDAL)` inside the `WITHOUT_GUI` guard~~
+      — upstream is read-only. Handled here: the build script makes GDAL
+      optional at configure time.
+- [x] ~~Ask maintainer whether he'd publish headless binaries~~ — not available
+      to us. The build pipeline is permanent infrastructure, not a stopgap.
 
 ---
 

@@ -312,10 +312,13 @@ worth asking upstream.
   pre-generated per case study, and how `-p` (use static paths) interacts with
   them. `create_displace_input()` makes the directories but leaves them empty.
   This blocks any complete writer.
-- **`DISABLE_IPC` link failure.** Worth filing upstream; the build script works
-  around it by leaving IPC enabled (it is inert without `--use-gui`).
-- **`find_package(GDAL)` outside the `WITHOUT_GUI` guard.** A one-line upstream
-  PR would drop `libgdal-dev` from the build dependencies entirely.
-- **Ask the maintainer (frabas) whether he would publish headless Linux
-  binaries in official releases.** That would delete Phase 1 outright and is by
-  far the highest-leverage item on this list.
+- **`DISABLE_IPC` link failure.** Handled here, not upstream: the build script
+  leaves IPC enabled, which is inert without `--use-gui`.
+- **`find_package(GDAL)` outside the `WITHOUT_GUI` guard.** Handled here: the
+  build script makes GDAL optional at configure time, so `libgdal-dev` is not
+  needed.
+
+Both were previously listed as things to raise upstream. `frabas/DISPLACE_GUI`
+is read-only for this project (see `CLAUDE.md`), so every such problem is
+absorbed by `tools/build-displace.sh` as a conditional patch instead. The
+pipeline is permanent infrastructure, not a stopgap awaiting an upstream fix.
