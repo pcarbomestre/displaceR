@@ -245,9 +245,14 @@ if ! stdlib_has_random_shuffle; then
     sed_i 's/^random_shuffle[[:space:]]*(/displace_compat::random_shuffle(/' "$f"
     sed_i 's/@@ALREADY@@/displace_compat::random_shuffle/g' "$f"
     if ! grep -q 'random_shuffle_compat.h' "$f"; then
-      last_inc="$(grep -n '^#include' "$f" | tail -1 | cut -d: -f1)"
-      if [ -n "$last_inc" ]; then
-        sed_i "${last_inc}a\\
+      # Anchor to the FIRST #include, not the last. simulator/main.cpp's last
+      # include sits inside an `#ifdef NO_IPC` block, and IPC is deliberately
+      # left enabled (DISABLE_IPC does not link upstream), so an include placed
+      # there is preprocessed away -- the call is then qualified but the shim is
+      # invisible. The first include is always at file scope.
+      first_inc="$(grep -n '^#include' "$f" | head -1 | cut -d: -f1)"
+      if [ -n "$first_inc" ]; then
+        sed_i "${first_inc}i\\
 #include <random_shuffle_compat.h>
 " "$f"
       fi

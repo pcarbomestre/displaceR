@@ -23,6 +23,10 @@
 #ifndef DISPLACE_RANDOM_SHUFFLE_COMPAT_H
 #define DISPLACE_RANDOM_SHUFFLE_COMPAT_H
 
+// <algorithm> for std::iter_swap. It must be included explicitly: this header
+// is inserted before every other include in the translation unit, so it cannot
+// rely on anything else having pulled it in transitively.
+#include <algorithm>
 #include <cstdlib>
 #include <iterator>
 #include <utility>
