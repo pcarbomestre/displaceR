@@ -130,16 +130,13 @@ jobs:
           tail -20 "$RUNNER_TEMP/smoke.log"
           echo "exit status: $RC"
 
-          # DISPLACE segfaults during static destruction whenever SQLite output
-          # is enabled, *after* the simulation has finished and everything is
-          # written (docs/upstream-issues.md, issue 3). So a non-zero status is
-          # not by itself a failure here. What matters is whether the run
-          # actually completed, which the output database records.
-          if [ "$RC" -ne 0 ] && [ "$RC" -ne 139 ]; then
-            echo "::error::displace exited with $RC, which is not the known teardown crash"
-            exit 1
-          fi
-
+          # DISPLACE crashes during static destruction whenever SQLite output is
+          # enabled, *after* the simulation has finished and everything is
+          # written (docs/upstream-issues.md, issue 3). The signal varies run to
+          # run -- 139 (SIGSEGV) and 134 (SIGABRT) both occur on identical
+          # inputs -- so do NOT gate on a specific status. The database below is
+          # the real evidence of whether the run completed; a status check here
+          # would only add a coin flip.
           DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_smoke_out.db"
           if [ ! -f "$DB" ]; then
             echo "::error::no output database at $DB"
@@ -156,8 +153,8 @@ jobs:
 
           echo "--- outputs produced ---"
           find "$RUNNER_TEMP/out" -type f | wc -l
-          if [ "$RC" -eq 139 ]; then
-            echo "::warning::displace exited 139 in teardown; the run completed and outputs are intact (upstream issue 3)"
+          if [ "$RC" -ne 0 ]; then
+            echo "::warning::displace exited $RC in teardown; the run completed and outputs are intact (upstream issue 3)"
           fi
 
       - name: Golden-file regression against the new binary

@@ -188,8 +188,9 @@ is missing and why.
 ## Three things about DISPLACE that will bite you
 
 **Every run "fails".** With SQLite output enabled — the default, and the format
-you want — DISPLACE segfaults during static destruction *after* the simulation
-has finished and every file is written, so the process exits 139. `run_displace()`
+you want — DISPLACE crashes during static destruction *after* the simulation has
+finished and every file is written, exiting 139 or 134 (the signal varies
+between otherwise identical runs). `run_displace()`
 verifies from the output database that the run actually reached its step horizon
 before forgiving that, and errors normally on a real mid-run crash. You will see
 a warning; the results are fine. Details in

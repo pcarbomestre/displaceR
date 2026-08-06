@@ -124,3 +124,38 @@ test_that("--indb skips text-tree validation but checks the database exists", {
     "relative to input_dir"
   )
 })
+
+test_that("the crash is forgiven on any signal, not just SIGSEGV", {
+  ## The teardown crash does not report a stable status: over six identical
+  ## runs it alternated between 139 (SIGSEGV) and 134 (SIGABRT), the latter
+  ## being glibc catching the heap corruption first. Anything that keys on one
+  ## specific status will pass or fail by coin flip.
+  skip_unless_sqlite()
+  for (st in c(139L, 134L, 1L, 255L)) {
+    res <- displaceR:::run_completed_cleanly(fake_run(status = st))
+    expect_true(res$completed, info = paste("status", st))
+  }
+})
+
+test_that("a completed run is forgiven end to end whatever the status", {
+  ## Guards the run_displace() path, not just the helper: it must warn and
+  ## return rather than error, for a status it has never seen before.
+  skip_unless_sqlite()
+  ## fake_run() has already written a complete-looking database under
+  ## output_dir, so /bin/false standing in for the binary reproduces exactly
+  ## the situation: non-zero exit, finished run.
+  fr <- fake_run(steps = 100L, last_tstep = 99L, status = 134L)
+  input <- tempfile()
+  dir.create(input)
+
+  expect_warning(
+    res <- run_displace(
+      input_dir = input, input_name = "case", steps = 100,
+      validate = FALSE, echo = FALSE,
+      binary = "/bin/false", output_dir = fr$output_dir
+    ),
+    "the run completed"
+  )
+  expect_true(res$crashed_at_exit)
+  expect_equal(res$last_tstep, 99L)
+})

@@ -82,10 +82,14 @@ so the exported target carries its own include path.
 
 ---
 
-## 3. Segfault at exit whenever SQLite output is enabled — **affects every run**
+## 3. Crash at exit whenever SQLite output is enabled — **affects every run**
 
 After a completely successful simulation, the process crashes during static
-destruction and exits with signal 11 (status 139).
+destruction. **The signal varies between runs**: over six identical invocations
+(same inputs, same `sim_name`, same step count) the exit status alternated
+between 139 (SIGSEGV) and 134 (SIGABRT), the latter being glibc detecting the
+heap corruption rather than the process tripping over it. Anything consuming
+this must not key on a specific status.
 
 ```
 Thread 1 "displace" received signal SIGSEGV, Segmentation fault.
@@ -109,8 +113,8 @@ statements against an already-closed database.
 
 | Command | Exit status |
 |---|---|
-| `displace -f fake -F baseline -a minitest -O out -s s1 -i 20 --disable-crash-handler` | **139** |
-| ...same plus `--disable-sqlite` | **0** |
+| `displace -f fake -F baseline -a minitest -O out -s s1 -i 20 --disable-crash-handler` | **139 or 134** |
+| ...same plus `--disable-sqlite` | **0**, consistently |
 
 **The results are unaffected.** On the crashing run all 40 output files are
 written, and the output database passes `PRAGMA integrity_check` with
@@ -126,11 +130,12 @@ function-local static with controlled lifetime, or reset the global
 `shared_ptr` at the end of `main()` after `close()`, so the destructor does not
 run at static-destruction time.
 
-**How displaceR handles it:** `run_displace()` detects a non-zero exit, then
-verifies from the output database's `Metadata.lastTStep` that the run reached
-its horizon and that the file passes an integrity check. If so it warns and
-returns normally; otherwise it errors as usual. A real mid-run crash is still
-reported as a failure.
+**How displaceR handles it:** `run_displace()` detects *any* non-zero exit --
+deliberately not a specific status, given the above -- then verifies from the
+output database's `Metadata.lastTStep` that the run reached its horizon and that
+the file passes an integrity check. If so it warns and returns normally;
+otherwise it errors as usual. A real mid-run crash is still reported as a
+failure.
 
 ---
 
