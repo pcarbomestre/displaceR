@@ -88,21 +88,73 @@ displace_default_version <- function() {
 }
 
 ## Pick the build for this host: the newest glibc target the host can still run.
+## Which platform key a manifest entry's builds are indexed under. Linux builds
+## are keyed by glibc version ("2.35", "2.39") because that is what decides
+## whether a binary starts; macOS and Windows builds are keyed by os-arch
+## ("macos-arm64", "windows-x86_64") because their compatibility question is
+## different.
+host_build_keys <- function() {
+  sysname <- Sys.info()[["sysname"]]
+  machine <- Sys.info()[["machine"]]
+  if (identical(sysname, "Darwin")) {
+    ## An x86_64 build runs on Apple Silicon under Rosetta 2, so an arm64 host
+    ## can use either -- native first. An Intel Mac can only use x86_64.
+    if (machine %in% c("arm64", "aarch64")) c("macos-arm64", "macos-x86_64")
+    else "macos-x86_64"
+  } else if (is_windows()) {
+    "windows-x86_64"
+  } else {
+    character(0)   # Linux: selected by glibc below
+  }
+}
+
 select_build <- function(entry, version) {
   builds <- entry$builds %||% list()
   if (!length(builds)) {
     stopf("manifest entry '%s' lists no builds.", version)
   }
-  hg <- host_glibc()
   targets <- names(builds)
+
+  ## macOS and Windows first: their builds are keyed by os-arch, and matching
+  ## them against glibc versions is meaningless. Without this the fallback
+  ## below hands a macOS user a Linux tarball, which unpacks cleanly and then
+  ## fails to execute -- a confusing way to learn the build does not exist.
+  keys <- host_build_keys()
+  if (length(keys)) {
+    hit <- keys[keys %in% targets]
+    if (length(hit)) {
+      return(list(target = hit[[1]], build = builds[[hit[[1]]]]))
+    }
+    stopf(paste0("version '%s' has no build for this platform (looked for %s; ",
+                 "the manifest offers %s).\n",
+                 "  Build it locally with tools/build-displace.sh and install ",
+                 "the result:\n",
+                 "      install_displace(from = \"<built>.tar.gz\")\n",
+                 "  or point DISPLACE_BINARY at a simulator you already have."),
+          version, paste(keys, collapse = " / "),
+          paste(sort(targets), collapse = " / "))
+  }
+
+  hg <- host_glibc()
   if (is.na(hg)) {
-    ## Cannot determine host glibc (non-Linux, or ldd unavailable). Take the
-    ## oldest target, which is the most likely to run anywhere.
-    pick <- sort_versions(targets)[1]
+    ## Linux, but ldd is unavailable. Take the oldest target, which is the most
+    ## likely to run anywhere.
+    linux_targets <- targets[!grepl("^(macos|windows)-", targets)]
+    if (!length(linux_targets)) {
+      stopf("version '%s' has no Linux build (offers %s).", version,
+            paste(sort(targets), collapse = " / "))
+    }
+    pick <- sort_versions(linux_targets)[1]
     warnf(paste0("could not determine this host's glibc version; falling back to ",
                  "the glibc %s build. If it fails to start, install a build for ",
                  "your glibc or set DISPLACE_BINARY."), pick)
     return(list(target = pick, build = builds[[pick]]))
+  }
+  ## Only glibc-keyed entries are candidates from here on.
+  targets <- targets[!grepl("^(macos|windows)-", targets)]
+  if (!length(targets)) {
+    stopf("version '%s' has no Linux build (offers %s).", version,
+          paste(sort(names(builds)), collapse = " / "))
   }
   usable <- targets[vapply(targets, function(t) ver_gte(hg, t), logical(1))]
   if (!length(usable)) {
@@ -231,7 +283,10 @@ install_displace <- function(version = NULL,
   url <- build$url %||% stopf("manifest entry '%s' build '%s' has no url", version, sel$target)
 
   if (!quiet) {
-    msgf("Installing DISPLACE %s (glibc %s build) into %s", version, sel$target, dest)
+    msgf("Installing DISPLACE %s (%s build) into %s", version,
+         if (grepl("^(macos|windows)-", sel$target)) sel$target
+         else paste("glibc", sel$target),
+         dest)
     msgf("  upstream commit: %s", entry$upstream_sha %||% "unknown")
   }
 

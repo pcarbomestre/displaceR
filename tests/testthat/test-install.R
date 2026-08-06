@@ -40,6 +40,11 @@ test_that("the glibc build selection never picks something the host cannot run",
     "2.39" = list(url = "new")
   ))
 
+  ## These exercise the Linux selection path, so the host must look like Linux
+  ## regardless of where the suite runs -- on macOS the os-arch branch would
+  ## take over and never reach the glibc comparison.
+  local_mocked_bindings(host_build_keys = function() character(0))
+
   ## A host with glibc 2.35 can run the 2.31 and 2.35 builds; the newest usable
   ## one wins.
   local_mocked_bindings(host_glibc = function() "2.35")
@@ -57,9 +62,60 @@ test_that("the glibc build selection never picks something the host cannot run",
 test_that("an unknown host glibc falls back to the oldest build, with a warning", {
   entry <- list(builds = list("2.31" = list(url = "old"),
                               "2.39" = list(url = "new")))
+  local_mocked_bindings(host_build_keys = function() character(0))
   local_mocked_bindings(host_glibc = function() NA_character_)
   expect_warning(sel <- displaceR:::select_build(entry, "v"), "glibc")
   expect_equal(sel$target, "2.31")
+})
+
+test_that("macOS and Windows builds are selected by os-arch, not glibc", {
+  entry <- list(builds = list(
+    "2.39" = list(url = "linux"),
+    "macos-arm64" = list(url = "mac-arm"),
+    "macos-x86_64" = list(url = "mac-intel"),
+    "windows-x86_64" = list(url = "win")
+  ))
+
+  ## Apple Silicon prefers the native build.
+  local_mocked_bindings(host_build_keys = function() c("macos-arm64", "macos-x86_64"))
+  expect_equal(displaceR:::select_build(entry, "v")$target, "macos-arm64")
+
+  ## An Intel Mac can only use the x86_64 build.
+  local_mocked_bindings(host_build_keys = function() "macos-x86_64")
+  expect_equal(displaceR:::select_build(entry, "v")$target, "macos-x86_64")
+
+  local_mocked_bindings(host_build_keys = function() "windows-x86_64")
+  expect_equal(displaceR:::select_build(entry, "v")$target, "windows-x86_64")
+})
+
+test_that("an Apple Silicon host falls back to the Intel build under Rosetta", {
+  entry <- list(builds = list("macos-x86_64" = list(url = "mac-intel")))
+  local_mocked_bindings(host_build_keys = function() c("macos-arm64", "macos-x86_64"))
+  expect_equal(displaceR:::select_build(entry, "v")$target, "macos-x86_64")
+})
+
+test_that("a platform with no build errors instead of handing back a Linux tarball", {
+  ## The bug this guards: selection keyed only on glibc fell through to "oldest
+  ## target" on macOS and returned a Linux build, which unpacks cleanly and then
+  ## cannot execute -- a confusing way to discover the build does not exist.
+  entry <- list(builds = list("2.35" = list(url = "linux"),
+                              "2.39" = list(url = "linux2")))
+  local_mocked_bindings(host_build_keys = function() c("macos-arm64", "macos-x86_64"))
+  expect_error(displaceR:::select_build(entry, "v"),
+               "no build for this platform")
+  expect_error(displaceR:::select_build(entry, "v"), "DISPLACE_BINARY")
+})
+
+test_that("Linux selection ignores os-arch keyed builds", {
+  ## A manifest carrying all three platforms must not let a macOS entry be
+  ## considered when comparing glibc versions.
+  entry <- list(builds = list(
+    "2.35" = list(url = "linux"),
+    "macos-arm64" = list(url = "mac")
+  ))
+  local_mocked_bindings(host_build_keys = function() character(0))
+  local_mocked_bindings(host_glibc = function() "2.39")
+  expect_equal(displaceR:::select_build(entry, "v")$target, "2.35")
 })
 
 test_that("version strings sort numerically, not lexically", {

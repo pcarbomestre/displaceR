@@ -20,9 +20,14 @@ on:
         required: false
         default: ""
       targets:
-        description: "Which glibc targets to build: 'both', '22.04' or '24.04'"
+        description: "Which glibc targets to build: 'both', '22.04', '24.04' or 'none'"
         required: false
         default: "both"
+      build_macos:
+        description: "Also build the macOS (Apple Silicon) binary"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -37,15 +42,21 @@ jobs:
         # Build on the oldest glibc you intend to support: a binary built on
         # 2.39 will not start on a 2.35 host, but the reverse works fine.
         run: |
+          # 'none' builds no Linux target, so macOS can be added to an existing
+          # release without rebuilding and re-uploading a Linux tarball that is
+          # already published and verified.
           case "${{ inputs.targets }}" in
             22.04) m='[{"os":"ubuntu-22.04","glibc":"2.35"}]' ;;
             24.04) m='[{"os":"ubuntu-24.04","glibc":"2.39"}]' ;;
+            none)  m='[]' ;;
             *)     m='[{"os":"ubuntu-22.04","glibc":"2.35"},{"os":"ubuntu-24.04","glibc":"2.39"}]' ;;
           esac
           echo "matrix=$m" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
+    # An empty matrix is an error, not a no-op, so targets:none needs this.
+    if: needs.plan.outputs.matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
@@ -266,6 +277,168 @@ jobs:
           )"
           fi
           gh release upload "$TAG" \
+            "${{ steps.package.outputs.name }}.tar.gz" \
+            "${{ steps.package.outputs.name }}.tar.gz.sha256" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # macOS
+  # ---------------------------------------------------------------------------
+  #
+  # macos-14 and later are native Apple Silicon, so this produces an arm64
+  # binary. Dependencies come from Homebrew rather than apt, and the payload is
+  # .dylib rather than .so, but tools/build-displace.sh already handles both --
+  # it was developed against a local Apple Silicon build. Everything specific to
+  # the platform lives in that script, not here.
+  #
+  # Note the build applies a random_shuffle compatibility shim: libc++ removed
+  # std::random_shuffle at C++17, which upstream still calls. The shim
+  # reproduces libstdc++'s permutation exactly and keeps drawing from rand(), so
+  # results follow the same seed as on Linux -- verified by
+  # .github/workflows/verify-shim.yml. See docs/upstream-issues.md 14.
+  build-macos:
+    if: inputs.build_macos
+    runs-on: macos-14
+    steps:
+      - name: Check out displaceR
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          # GDAL is deliberately absent: it is a configure-time formality that
+          # the build script makes optional, and installing it here would cost
+          # several minutes for something never linked.
+          brew install boost geographiclib sqlite cmake
+
+      - name: Record toolchain
+        run: |
+          cmake --version | head -1
+          c++ --version | head -1
+          sw_vers
+          uname -m
+
+      - name: Build
+        run: |
+          ./tools/build-displace.sh \
+            --ref "${{ inputs.upstream_ref }}" \
+            --workdir "$RUNNER_TEMP/displace-build" \
+            --outdir "$GITHUB_WORKSPACE/dist" \
+            --jobs "$(sysctl -n hw.ncpu)"
+
+      - name: Verify the payload is relocatable
+        # Same check as Linux, for the same reason: move the payload away from
+        # the build tree and confirm it still starts. @loader_path is the dyld
+        # equivalent of $ORIGIN, and getting it wrong produces a binary that
+        # links cleanly and refuses to run.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/relocated"
+          cp -a dist/payload/. "$RUNNER_TEMP/relocated/"
+          rm -rf "$RUNNER_TEMP/displace-build"
+          cd "$RUNNER_TEMP/relocated"
+          echo "--- otool -L ---"
+          otool -L ./displace
+          echo "--- rpaths ---"
+          otool -l ./displace | grep -A 2 LC_RPATH || true
+          echo "--- arch ---"
+          file ./displace
+          echo "--- --help ---"
+          env -u DYLD_LIBRARY_PATH ./displace --help | head -20
+
+      - name: Smoke test against DISPLACE_input_minitest
+        id: smoke
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git "$RUNNER_TEMP/minitest" || exit 1
+          mkdir -p "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/relocated"
+          set +e
+          env -u DYLD_LIBRARY_PATH ./displace \
+            -f fake -F baseline \
+            -a "$RUNNER_TEMP/minitest" -O "$RUNNER_TEMP/out" \
+            -s smoke -i 50 -V 0 --disable-crash-handler > "$RUNNER_TEMP/smoke.log" 2>&1
+          RC=$?
+          set -e
+          tail -20 "$RUNNER_TEMP/smoke.log"
+          echo "exit status: $RC"
+
+          # As on Linux, the database is the evidence and the exit status is
+          # not: DISPLACE crashes in teardown on every SQLite run.
+          DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_smoke_out.db"
+          if [ ! -f "$DB" ]; then
+            echo "::error::no output database at $DB"
+            exit 1
+          fi
+          sqlite3 "$DB" "PRAGMA integrity_check;"
+          LAST="$(sqlite3 "$DB" "SELECT Value FROM Metadata WHERE Key='lastTStep';")"
+          echo "lastTStep=$LAST (requested 50 steps)"
+          if [ -z "$LAST" ] || [ "$LAST" -lt 48 ]; then
+            echo "::error::the run did not reach its step horizon"
+            exit 1
+          fi
+          if [ "$RC" -ne 0 ]; then
+            echo "::warning::displace exited $RC in teardown; the run completed and outputs are intact (upstream issue 3)"
+          fi
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          UPSTREAM_SHA="$(python3 -c "import json;print(json.load(open('dist/build-info.json'))['upstream_sha'])")"
+          ARCH="$(uname -m)"
+          NAME="displace-${UPSTREAM_SHA:0:12}-macos-${ARCH}"
+          tar -czf "${NAME}.tar.gz" -C dist/payload .
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          {
+            echo "name=${NAME}"
+            echo "arch=${ARCH}"
+            echo "upstream_sha=${UPSTREAM_SHA}"
+            echo "sha256=$(cut -d' ' -f1 "${NAME}.tar.gz.sha256")"
+          } >> "$GITHUB_OUTPUT"
+          cat "${NAME}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+            dist/build-info.json
+
+      - name: Write manifest entry to the step summary
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG:-<tag>}"
+          {
+            echo '### macOS manifest entry'
+            echo
+            echo 'Add under the version'"'"'s "builds", keyed by os-arch:'
+            echo
+            echo '```json'
+            cat <<JSON
+          "macos-${{ steps.package.outputs.arch }}": {
+            "url": "${BASE}/${{ steps.package.outputs.name }}.tar.gz",
+            "sha256": "${{ steps.package.outputs.sha256 }}",
+            "arch": "${{ steps.package.outputs.arch }}",
+            "built_on": "macos-14"
+          }
+          JSON
+            echo '```'
+            echo
+            echo "smoke test: ${{ steps.smoke.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release asset
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.release_tag }}" \
             "${{ steps.package.outputs.name }}.tar.gz" \
             "${{ steps.package.outputs.name }}.tar.gz.sha256" \
             --clobber
