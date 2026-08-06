@@ -1,5 +1,23 @@
 # displaceR
 
+> ### This is not the DISPLACE model
+>
+> **DISPLACE** is developed by **[Francois Bastardie](https://orbit.dtu.dk/en/persons/fran%C3%A7ois-bastardie)
+> and colleagues at DTU Aqua** — the model, the science, and the decades of
+> work behind it are entirely theirs:
+> **<https://github.com/frabas/DISPLACE_GUI>** · **<https://displace-project.org/>**
+>
+> `displaceR` is a **third-party R wrapper**, not affiliated with or endorsed by
+> the DISPLACE project. It contains **no model code** and implements **no model
+> behaviour**. It installs the simulator, writes its input files, runs it, and
+> reads its outputs — nothing more. Every number it produces comes from
+> DISPLACE.
+>
+> **If you publish results, cite the DISPLACE papers, not this package**
+> (see [Citing](#citing)). Questions about the *model* belong with the DISPLACE
+> project; only problems with *this R interface* belong in this repository's
+> issues.
+
 Run the [DISPLACE](https://displace-project.org/) individual-based fisheries
 simulator from R — on **Linux, macOS or Windows** — **without a compiler,
 CMake, or root access on the machine you run it from**.
@@ -269,12 +287,68 @@ is worth reporting.
 See [`docs/needs-you.md`](docs/needs-you.md) for what is outstanding and
 [`docs/roadmap.md`](docs/roadmap.md) for the known gaps.
 
+## Citing
+
+**Cite DISPLACE, not `displaceR`.** The model did the work; this package only
+started the process and parsed the output. In R:
+
+```r
+citation("displaceR")     # returns the DISPLACE papers
+```
+
+The primary reference:
+
+> Bastardie F, Nielsen JR, Miethe T (2014). DISPLACE: a dynamic,
+> individual-based model for spatial fishing planning and effort displacement —
+> integrating underlying fish population models. *Canadian Journal of Fisheries
+> and Aquatic Sciences* 71(3):366–386.
+> [doi:10.1139/cjfas-2013-0126](https://doi.org/10.1139/cjfas-2013-0126)
+
+Further DISPLACE publications:
+
+> Bastardie F, Nielsen JR, Eigaard OR, Fock HO, Jonsson P, Bartolino V (2015).
+> Competition for marine space: modelling the Baltic Sea fisheries and effort
+> displacement under spatial restrictions. *ICES Journal of Marine Science*
+> 72(3):824–840. [doi:10.1093/icesjms/fsu215](https://doi.org/10.1093/icesjms/fsu215)
+
+> Bastardie F, Nielsen JR, Eero M, Fuga F, Rindorf A (2017). Effects of changes
+> in stock productivity and mixing on sustainable fishing and economic
+> viability. *ICES Journal of Marine Science* 74(2):535–551.
+> [doi:10.1093/icesjms/fsw083](https://doi.org/10.1093/icesjms/fsw083)
+
+> Bastardie F, Angelini S, Bolognini L, Fuga F, Manfredi C, Martinelli M,
+> Nielsen JR, Santojanni A, Scarcella G, Grati F (2017). Spatial planning for
+> fisheries in the Northern Adriatic: working toward viable and sustainable
+> fishing. *Ecosphere* 8(2):e01696.
+> [doi:10.1002/ecs2.1696](https://doi.org/10.1002/ecs2.1696)
+
+If it helps reproducibility to record how you ran the model, name the interface
+in your methods text — along with the exact upstream commit, which
+`displace_version()` reports — rather than adding this package to your
+reference list.
+
+## Credit and scope
+
+| | |
+|---|---|
+| **The DISPLACE model** | Francois Bastardie and colleagues, DTU Aqua. Copyright © 2012–2026 Francois Bastardie. All model code, science and validation. |
+| **This package** | An unaffiliated R interface. No model code, no model behaviour, no scientific contribution. |
+
+Related work by the DISPLACE authors, which this package deliberately does not
+duplicate:
+
+- [`frabas/DISPLACE_GUI`](https://github.com/frabas/DISPLACE_GUI) — the model itself
+- [`frabas/DISPLACE_R_inputs`](https://github.com/frabas/DISPLACE_R_inputs) — R routines for building case studies
+- [`frabas/displaceplot`](https://github.com/frabas/displaceplot) — R package for reading and plotting outputs
+- [`frabas/DISPLACE_input_minitest`](https://github.com/frabas/DISPLACE_input_minitest) — the minimal demo dataset
+
+Upstream is treated as strictly read-only: this project never modifies it and
+never files against it. Where the build needs a fix, it is applied to a
+throwaway checkout at build time and never committed anywhere.
+
 ## Licensing
 
 GPL-2, matching upstream. Distributing DISPLACE binaries means shipping the
 corresponding source, which here is the upstream commit SHA in
 `inst/manifest.json` plus `tools/build-displace.sh` at the commit that built it.
 Both go into every release's notes. See [`LICENSE.note`](LICENSE.note).
-
-DISPLACE is developed by Francois Bastardie (DTU Aqua) and contributors. Cite
-the upstream publications when publishing results.

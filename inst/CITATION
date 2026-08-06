@@ -1,0 +1,82 @@
+citHeader(
+  "displaceR is only an R interface. The model it runs -- DISPLACE -- was ",
+  "developed by Francois Bastardie and colleagues at DTU Aqua. If you publish ",
+  "results produced with this package, cite the DISPLACE publications below. ",
+  "There is no need to cite displaceR itself; if you want to record which ",
+  "interface you used, mention it in the methods text rather than the ",
+  "reference list."
+)
+
+bibentry(
+  bibtype = "Article",
+  title   = paste("DISPLACE: a dynamic, individual-based model for spatial",
+                  "fishing planning and effort displacement - integrating",
+                  "underlying fish population models"),
+  author  = c(person("Francois", "Bastardie"),
+              person("J. Rasmus", "Nielsen"),
+              person("Tanja", "Miethe")),
+  journal = "Canadian Journal of Fisheries and Aquatic Sciences",
+  year    = "2014",
+  volume  = "71",
+  number  = "3",
+  pages   = "366--386",
+  doi     = "10.1139/cjfas-2013-0126",
+  header  = "The primary DISPLACE reference:"
+)
+
+bibentry(
+  bibtype = "Article",
+  title   = paste("Competition for marine space: modelling the Baltic Sea",
+                  "fisheries and effort displacement under spatial restrictions"),
+  author  = c(person("Francois", "Bastardie"),
+              person("J. Rasmus", "Nielsen"),
+              person("Ole R.", "Eigaard"),
+              person("Heino O.", "Fock"),
+              person("Patrik", "Jonsson"),
+              person("Valerio", "Bartolino")),
+  journal = "ICES Journal of Marine Science",
+  year    = "2015",
+  volume  = "72",
+  number  = "3",
+  pages   = "824--840",
+  doi     = "10.1093/icesjms/fsu215"
+)
+
+bibentry(
+  bibtype = "Article",
+  title   = paste("Effects of changes in stock productivity and mixing on",
+                  "sustainable fishing and economic viability"),
+  author  = c(person("Francois", "Bastardie"),
+              person("J. Rasmus", "Nielsen"),
+              person("Margit", "Eero"),
+              person("Federico", "Fuga"),
+              person("Anna", "Rindorf")),
+  journal = "ICES Journal of Marine Science",
+  year    = "2017",
+  volume  = "74",
+  number  = "2",
+  pages   = "535--551",
+  doi     = "10.1093/icesjms/fsw083"
+)
+
+bibentry(
+  bibtype = "Article",
+  title   = paste("Spatial planning for fisheries in the Northern Adriatic:",
+                  "working toward viable and sustainable fishing"),
+  author  = c(person("Francois", "Bastardie"),
+              person("Silvia", "Angelini"),
+              person("Luca", "Bolognini"),
+              person("Federico", "Fuga"),
+              person("Chiara", "Manfredi"),
+              person("Michela", "Martinelli"),
+              person("J. Rasmus", "Nielsen"),
+              person("Alberto", "Santojanni"),
+              person("Giuseppe", "Scarcella"),
+              person("Fabio", "Grati")),
+  journal = "Ecosphere",
+  year    = "2017",
+  volume  = "8",
+  number  = "2",
+  pages   = "e01696",
+  doi     = "10.1002/ecs2.1696"
+)

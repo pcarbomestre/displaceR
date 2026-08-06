@@ -12,6 +12,24 @@ backend, installed once with [install_displace()] into a user-writable cache
 directory, in the same way `cmdstanr` installs CmdStan and `r4ss` fetches the
 Stock Synthesis executable.
 }
+\section{This package is not DISPLACE}{
+
+
+DISPLACE is developed by Francois Bastardie and colleagues at DTU Aqua
+(<https://github.com/frabas/DISPLACE_GUI>,
+<https://displace-project.org/>). The model, the science behind it, and its
+validation are entirely theirs.
+
+This package is an unaffiliated R interface. It implements no model
+behaviour: it installs the simulator, writes its input files, launches it,
+and reads its outputs. Every number it returns was computed by DISPLACE.
+
+**Cite DISPLACE, not this package.** `citation("displaceR")` returns the
+DISPLACE references. Questions about the model belong with the DISPLACE
+project; only problems with this R interface belong in this package's issue
+tracker.
+}
+
 \section{Getting started}{
 
 
@@ -66,12 +84,24 @@ upstream commit SHA recorded in the manifest plus the build recipe in
 Useful links:
 \itemize{
   \item \url{https://github.com/pcarbomestre/displaceR}
+  \item \url{https://github.com/frabas/DISPLACE_GUI}
+  \item \url{https://displace-project.org/}
   \item Report bugs at \url{https://github.com/pcarbomestre/displaceR/issues}
 }
 
 }
 \author{
-\strong{Maintainer}: Pol Carbo Mestre \email{polcarbo@gmail.com}
+\strong{Maintainer}: Pol Carbo Mestre \email{polcarbo@gmail.com} (Author of this R interface only, not of DISPLACE)
+
+Authors:
+\itemize{
+  \item Francois Bastardie \email{fba@aqua.dtu.dk} (Author and copyright holder of the DISPLACE simulator (https://github.com/frabas/DISPLACE_GUI), which this package runs but does not modify) [copyright holder]
+}
+
+Other contributors:
+\itemize{
+  \item  DTU Aqua (Copyright holder of the DISPLACE simulator) [copyright holder]
+}
 
 }
 \keyword{internal}

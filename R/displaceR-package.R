@@ -6,6 +6,22 @@
 #' directory, in the same way `cmdstanr` installs CmdStan and `r4ss` fetches the
 #' Stock Synthesis executable.
 #'
+#' @section This package is not DISPLACE:
+#'
+#' DISPLACE is developed by Francois Bastardie and colleagues at DTU Aqua
+#' (<https://github.com/frabas/DISPLACE_GUI>,
+#' <https://displace-project.org/>). The model, the science behind it, and its
+#' validation are entirely theirs.
+#'
+#' This package is an unaffiliated R interface. It implements no model
+#' behaviour: it installs the simulator, writes its input files, launches it,
+#' and reads its outputs. Every number it returns was computed by DISPLACE.
+#'
+#' **Cite DISPLACE, not this package.** `citation("displaceR")` returns the
+#' DISPLACE references. Questions about the model belong with the DISPLACE
+#' project; only problems with this R interface belong in this package's issue
+#' tracker.
+#'
 #' @section Getting started:
 #'
 #' ```r
@@ -50,3 +66,15 @@
 #'
 #' @keywords internal
 "_PACKAGE"
+
+## A one-line reminder at attach time. Attribution that lives only in a README
+## reaches the people who read READMEs; this reaches everyone else, and it is
+## the message that matters most -- who to credit for the results.
+.onAttach <- function(libname, pkgname) {
+  packageStartupMessage(
+    "displaceR runs DISPLACE, developed by Francois Bastardie and colleagues ",
+    "at DTU Aqua.\n",
+    "The model and all its science are theirs: https://displace-project.org/\n",
+    "Cite the DISPLACE papers when publishing results -- citation(\"displaceR\")."
+  )
+}

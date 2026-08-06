@@ -1,17 +1,35 @@
 Package: displaceR
-Title: Run the DISPLACE Fisheries Simulator from R
+Title: Run the 'DISPLACE' Fisheries Simulator from R
 Version: 0.1.0
-Authors@R:
-    person("Pol", "Carbo Mestre", email = "polcarbo@gmail.com", role = c("aut", "cre"))
-Description: A thin R interface to the DISPLACE individual-based fisheries
-    simulator. The package contains no compiled code: it downloads a prebuilt
-    headless Linux binary published by the companion build pipeline, writes and
-    validates DISPLACE input files, runs the simulator, and reads its SQLite and
-    text outputs back into data frames. Modelled on the r4ss / cmdstanr pattern
-    where the backend is installed separately into a user directory.
+Authors@R: c(
+    person("Pol", "Carbo Mestre", email = "polcarbo@gmail.com",
+           role = c("aut", "cre"),
+           comment = "Author of this R interface only, not of DISPLACE"),
+    person("Francois", "Bastardie", email = "fba@aqua.dtu.dk",
+           role = c("aut", "cph"),
+           comment = "Author and copyright holder of the DISPLACE simulator
+                      (https://github.com/frabas/DISPLACE_GUI), which this
+                      package runs but does not modify"),
+    person(family = "DTU Aqua", role = "cph",
+           comment = "Copyright holder of the DISPLACE simulator"))
+Description: An R interface to 'DISPLACE', the dynamic, individual-based model
+    for spatial fishing planning and effort displacement developed by Francois
+    Bastardie and colleagues at DTU Aqua and described in Bastardie, Nielsen
+    and Miethe (2014) <doi:10.1139/cjfas-2013-0126>. All of the science is
+    theirs: this package contains no model code and implements no model
+    behaviour. It installs a prebuilt 'DISPLACE' binary, writes and validates
+    its input files, runs it, and reads its 'SQLite' and text outputs back into
+    data frames, so that existing case studies can be driven from R on Linux,
+    macOS and Windows. Modelled on the 'r4ss' / 'cmdstanr' pattern where the
+    backend is installed separately into a user directory. Please cite the
+    'DISPLACE' publications, not this package, when publishing results.
 License: GPL-2
-URL: https://github.com/pcarbomestre/displaceR
+URL: https://github.com/pcarbomestre/displaceR,
+    https://github.com/frabas/DISPLACE_GUI,
+    https://displace-project.org/
 BugReports: https://github.com/pcarbomestre/displaceR/issues
+Note: Report problems with this R interface at the BugReports address above.
+    Problems with the DISPLACE model itself belong with the DISPLACE project.
 Encoding: UTF-8
 Depends:
     R (>= 4.0)
