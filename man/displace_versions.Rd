@@ -20,7 +20,7 @@ A data frame with one row per version, or a zero-row data frame if
   pins no default.
 }
 \description{
-Lists the entries in the package manifest — the builds that
+Lists the entries in the package manifest -- the builds that
 [install_displace()] can fetch. This is not a list of what is installed; use
 [displace_path()] for that.
 }

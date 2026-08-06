@@ -59,7 +59,7 @@ on the machine. On a shared server, leave this at 1 and parallelise over
 replicates instead.}
 
 \item{sqlite}{Whether to write the SQLite output database. `TRUE` is
-strongly preferred — it is structured, and its schema version is a reliable
+strongly preferred -- it is structured, and its schema version is a reliable
 dispatch key, unlike the text formats. `FALSE` passes `--disable-sqlite`.}
 
 \item{commit_rate}{Loops before committing to SQLite, DISPLACE's

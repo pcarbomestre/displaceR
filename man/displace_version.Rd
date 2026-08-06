@@ -17,7 +17,7 @@ A list with elements `displace_version`, `upstream_sha`, `path`,
 \description{
 Reports both identities of the binary, because they are not equivalent.
 `displace_version` is the string DISPLACE prints, which comes from a
-hardcoded `#define` in `include/version.h` and changes rarely — many
+hardcoded `#define` in `include/version.h` and changes rarely -- many
 different upstream commits report `1.6.6`. `upstream_sha` is the commit the
 binary was actually built from, and is the value to cite in a methods
 section or to compare across machines.

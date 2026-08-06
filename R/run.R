@@ -1,4 +1,4 @@
-## Phase 3 — the runner.
+## Phase 3 -- the runner.
 ##
 ## The CLI is the entire API surface of the simulator. Argument names below are
 ## verified against simulator/main.cpp at upstream 7f2656fb; the short options
@@ -39,7 +39,7 @@ MAX_STEPS <- 52586L
 #'   on the machine. On a shared server, leave this at 1 and parallelise over
 #'   replicates instead.
 #' @param sqlite Whether to write the SQLite output database. `TRUE` is
-#'   strongly preferred — it is structured, and its schema version is a reliable
+#'   strongly preferred -- it is structured, and its schema version is a reliable
 #'   dispatch key, unlike the text formats. `FALSE` passes `--disable-sqlite`.
 #' @param commit_rate Loops before committing to SQLite, DISPLACE's
 #'   `--commit-rate`. Larger values are faster and lose more on a crash.

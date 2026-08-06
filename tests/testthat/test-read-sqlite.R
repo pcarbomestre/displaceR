@@ -1,6 +1,6 @@
 ## Builds a database with the shape DISPLACE writes, so the reader is exercised
 ## without needing a simulator binary. It is not a substitute for reading a real
-## output database — see test-golden.R — but it does pin down the metadata and
+## output database -- see test-golden.R -- but it does pin down the metadata and
 ## dispatch behaviour, which is where version drift will first show up.
 
 make_fake_db <- function(path = withr_tempfile(".db"), db_version = 4L) {

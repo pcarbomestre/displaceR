@@ -70,12 +70,12 @@ create_displace_input <- function(input_dir, input_name, a_graph = 1L,
 #' What it checks:
 #' * `simusspe_<name>/` exists and holds `config.dat` and `<scenario>.dat`;
 #' * `config.dat` parses, and the three `calib_*` vectors have length `nbpops`
-#'   — the simulator throws on exactly this;
+#'   -- the simulator throws on exactly this;
 #' * the scenario file parses and names a graph;
 #' * `graphsspe/coord<N>.dat` and `graph<N>.dat` exist and have a line count
 #'   consistent with the scenario's `nrow_coord` / `nrow_graph`;
 #' * all four quarters of `vesselsspe_fgrounds_quarter*.dat` and
-#'   `vesselsspe_harbours_quarter*.dat` exist — `main.cpp` loads all four at
+#'   `vesselsspe_harbours_quarter*.dat` exist -- `main.cpp` loads all four at
 #'   startup regardless of the simulated period;
 #' * a calendar file is present under one of its two accepted names.
 #'

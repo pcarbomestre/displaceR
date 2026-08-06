@@ -283,6 +283,11 @@ cat > "$OUTDIR/build-info.json" <<JSON
 }
 JSON
 
+# Keep a copy inside the payload as well, so a tarball carries its own
+# provenance: install_displace(from = "…tar.gz") reads it to record which
+# upstream commit the binary came from.
+cp "$OUTDIR/build-info.json" "$PAYLOAD/build-info.json"
+
 log "done"
 cat "$OUTDIR/build-info.json"
 ls -la "$PAYLOAD"

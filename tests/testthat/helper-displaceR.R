@@ -6,7 +6,7 @@ withr_tempfile <- function(fileext = "") {
 }
 
 ## Set environment variables for the duration of `code`, restoring whatever was
-## there before — including the difference between "unset" and "set to empty".
+## there before -- including the difference between "unset" and "set to empty".
 ## `code` stays a promise until the variables are in place, so the block runs
 ## under them.
 withr_env <- function(vars, code) {
@@ -23,8 +23,8 @@ withr_env <- function(vars, code) {
 }
 
 ## Build a minimal but structurally complete input tree, sufficient for
-## validate_displace_input() to pass. It is not a runnable case study — the
-## per-population and per-metier data files are empty — but it exercises every
+## validate_displace_input() to pass. It is not a runnable case study -- the
+## per-population and per-metier data files are empty -- but it exercises every
 ## structural rule the validator knows about.
 make_fake_input <- function(dir = tempfile(), input_name = "testcase",
                             nbpops = 2L, nrow_coord = 5L, nrow_graph = 4L,

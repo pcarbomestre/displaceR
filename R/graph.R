@@ -90,7 +90,7 @@ graphsspe_file <- function(input_dir, a_graph, what) {
 #'
 #' Both files are column-stacked with no header or delimiter: one value per
 #' line, three blocks back to back. The number of rows per block is not in the
-#' file — it comes from `nrow_coord` / `nrow_graph` in the scenario file, which
+#' file -- it comes from `nrow_coord` / `nrow_graph` in the scenario file, which
 #' is why this function wants a scenario or explicit counts.
 #'
 #' @param input_dir Folder containing `graphsspe/`. Note that `graphsspe` is

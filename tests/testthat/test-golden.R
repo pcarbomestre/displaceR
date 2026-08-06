@@ -1,4 +1,4 @@
-## Phase 4 — golden-file regression against a real DISPLACE run.
+## Phase 4 -- golden-file regression against a real DISPLACE run.
 ##
 ## This is the test that catches upstream interface drift, and it is the only
 ## one here that needs an actual simulator and dataset. Everything else in this
@@ -104,7 +104,7 @@ test_that("a short minitest run produces readable outputs", {
   ## Upstream segfaults during static destruction whenever SQLite output is on,
   ## after the simulation has finished and everything is written. run_displace()
   ## verifies completion from the database and warns instead of failing, so the
-  ## warning is the expected path here — see docs/upstream-issues.md, issue 3.
+  ## warning is the expected path here -- see docs/upstream-issues.md, issue 3.
   res <- suppressWarnings(run_displace(
     input_dir = minitest_dir(),
     input_name = minitest_name(),

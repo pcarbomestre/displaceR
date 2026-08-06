@@ -160,8 +160,8 @@ read_displace_output <- function(x,
   first <- utils::head(readLines(path, n = 5L, warn = FALSE), 5L)
   first <- first[nzchar(trim(first))]
   if (!length(first)) {
-    ## An empty output file is normal — the run simply produced no rows of this
-    ## kind — so return the right shape rather than erroring.
+    ## An empty output file is normal -- the run simply produced no rows of this
+    ## kind -- so return the right shape rather than erroring.
     df <- as.data.frame(
       stats::setNames(rep(list(logical(0)), length(cols)), cols),
       stringsAsFactors = FALSE

@@ -130,7 +130,7 @@ OUTPUT_SPECS <- list(
     types = c("i", "c", "i", "d", "d")
   ),
   fishfarmslogs = list(
-    ## Upstream writes "fishfarmslogs_", with the s — the documentation and the
+    ## Upstream writes "fishfarmslogs_", with the s -- the documentation and the
     ## receiving parameter name both say "fishfarmlogs", so a pattern taken from
     ## the docs never matches a real file.
     pattern = "^fishfarmslogs_",
@@ -157,7 +157,7 @@ OUTPUT_SPECS <- list(
   ),
   popdyn_F = list(
     pattern = "^popdyn_F_",
-    ## F at age, cumulated over months — note the comment in
+    ## F at age, cumulated over months -- note the comment in
     ## Population::export_popdyn_F warning that these are cumulative.
     cols = c("tstep", "stock", sprintf("F_age%d", 0:(N_AGES - 1L))),
     types = c("i", "i", rep("d", N_AGES))
@@ -287,7 +287,7 @@ popnodes_totals_cols <- function(nbpops) {
   c("tstep", "node", "long", "lat", per_pop)
 }
 
-## loglike_*.dat — the economics file.
+## loglike_*.dat -- the economics file.
 ##
 ## Upstream supplies an R idiom for naming these columns, and it inserts a
 ## `disc.*` block for the explicit populations that the flat field list in the

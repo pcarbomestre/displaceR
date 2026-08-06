@@ -8,7 +8,8 @@ install_displace(
   version = NULL,
   overwrite = FALSE,
   quiet = FALSE,
-  timeout = 600
+  timeout = 600,
+  from = NULL
 )
 }
 \arguments{
@@ -22,6 +23,13 @@ reproducible across users of the same package version.}
 
 \item{timeout}{Download timeout in seconds. The tarball is a few MB, but
 R's default of 60s is tight on a slow link.}
+
+\item{from}{Install from a local build instead of downloading. Either a
+tarball produced by `tools/build-displace.sh`, or the `dist/payload`
+directory it stages. This is the route to use on a server with no outbound
+network access, or before any release has been published: build on any
+machine with a compiler, copy the tarball over, and install it here. No
+checksum is verified, because you are vouching for the file yourself.}
 }
 \value{
 The path to the installed `displace` executable, invisibly.
@@ -39,6 +47,11 @@ installation is keyed by version, so several versions can coexist and
 \examples{
 \dontrun{
 install_displace()
+
+# From a locally built payload, e.g. on an offline server:
+install_displace(from = "displace-7f2656fb-linux-x86_64.tar.gz",
+                 version = "local")
+
 displace_version()
 }
 }

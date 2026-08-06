@@ -107,7 +107,7 @@ test_that("displace_output_files classifies what it finds", {
 
 test_that("fishfarmslogs uses upstream's filename and its real width", {
   ## Upstream writes "fishfarmslogs_" with the s, while the documentation and
-  ## the receiving parameter both say "fishfarmlogs" — a pattern taken from the
+  ## the receiving parameter both say "fishfarmlogs" -- a pattern taken from the
   ## docs never matches a real file.
   expect_equal(displaceR:::classify_output("fishfarmslogs_sim1.dat"), "fishfarmslogs")
   expect_true(is.na(displaceR:::classify_output("fishfarmlogs_sim1.dat")))

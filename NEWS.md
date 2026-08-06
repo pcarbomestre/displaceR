@@ -66,9 +66,40 @@ Found while reading the parsers; the full list is in `CLAUDE.md` Appendix C.
 * Graph edge weights are **truncated**, not rounded, when the simulator reads
   them into a `vector<int>`. `read_displace_graph()` reports both values.
 
+## Offline and diagnostic support
+
+* `install_displace(from = ...)` installs from a locally built tarball or
+  payload directory. This is the route for a server with no outbound network
+  access, and the route that works before any release has been published: build
+  once on any machine with a compiler, copy the tarball over, install it here.
+  Payloads carry a `build-info.json`, so provenance survives the trip.
+* `displace_doctor()` checks platform, glibc, cache writability, the binary,
+  its shared libraries, whether it actually runs, and the optional packages --
+  and says what to do about each failure. Run it first on a new machine.
+
+## Verified against a real build and a real run
+
+The build script was executed end to end and the binary run against
+`frabas/DISPLACE_input_minitest`. That turned up several things the plan and
+upstream documentation had wrong; all are recorded in `docs/upstream-issues.md`.
+
+* **Upstream does not compile unpatched at 7f2656fb.** `cmake/compiler.cmake`
+  pins C++14 while `Population.{h,cpp}` need C++17, and msqlitecpp's exported
+  CMake target omits its include directory. `tools/build-displace.sh` patches
+  both at build time, conditionally.
+* **Every SQLite run exits 139.** DISPLACE segfaults in static destruction after
+  `main()` returns 0, with all outputs written and intact. `run_displace()`
+  verifies completion from the output database before forgiving it.
+* Output layouts corrected against real files: `fishfarmslogs` (misnamed in the
+  docs, and 14 columns not 10), `shipslogs` types, `popnodes_impact_per_szgroup`
+  colliding with `popnodes_impact`. Added `vmslikefpingsonly`, `popdyn`,
+  `popdyn_F`, `popdyn_SSB`, `nodes_envt`, `quotasuptake` and two more.
+* The demo dataset's parameterisation name is `fake`, not `minitest`.
+
 ## Not yet done
 
-`inst/manifest.json` is empty: the build workflow has not been run, so no
-binaries are published yet. Until then, build locally with
-`tools/build-displace.sh` and set `DISPLACE_BINARY`. See `docs/roadmap.md` for
-this and the rest of the known gaps.
+`inst/manifest.json` is empty: the build workflow has not been run in GitHub
+Actions, so no binaries are published yet. The script it runs has been executed
+successfully by hand, so this is a matter of triggering the workflow rather than
+of unproven code. Until then use `install_displace(from = ...)` or
+`DISPLACE_BINARY`. See `docs/roadmap.md`.

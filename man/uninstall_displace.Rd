@@ -7,7 +7,7 @@
 uninstall_displace(version)
 }
 \arguments{
-\item{version}{Version label to remove. Required — this function will not
+\item{version}{Version label to remove. Required -- this function will not
 wipe the whole cache without being told which version to drop.}
 }
 \value{

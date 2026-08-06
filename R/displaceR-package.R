@@ -33,7 +33,7 @@
 #'
 #' \describe{
 #'   \item{`DISPLACE_BINARY`}{Absolute path to a `displace` executable. When
-#'     set, it overrides everything else — [displace_path()] returns it and
+#'     set, it overrides everything else -- [displace_path()] returns it and
 #'     [install_displace()] is not needed. Use this if you have built DISPLACE
 #'     yourself, or to test a new build before publishing it.}
 #'   \item{`DISPLACER_CACHE`}{Overrides the cache directory that

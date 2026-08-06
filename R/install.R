@@ -1,4 +1,4 @@
-## Phase 2 — binary distribution.
+## Phase 2 -- binary distribution.
 ##
 ## The R package never compiles DISPLACE. It downloads a tarball built by
 ## .github/workflows/build-displace.yml and unpacks it into a user-writable
@@ -39,7 +39,7 @@ read_manifest <- function(path = manifest_file()) {
 
 #' DISPLACE binary versions known to this package
 #'
-#' Lists the entries in the package manifest — the builds that
+#' Lists the entries in the package manifest -- the builds that
 #' [install_displace()] can fetch. This is not a list of what is installed; use
 #' [displace_path()] for that.
 #'
@@ -149,29 +149,52 @@ sha256_of <- function(path) {
 #' @param quiet Suppress progress messages.
 #' @param timeout Download timeout in seconds. The tarball is a few MB, but
 #'   R's default of 60s is tight on a slow link.
+#' @param from Install from a local build instead of downloading. Either a
+#'   tarball produced by `tools/build-displace.sh`, or the `dist/payload`
+#'   directory it stages. This is the route to use on a server with no outbound
+#'   network access, or before any release has been published: build on any
+#'   machine with a compiler, copy the tarball over, and install it here. No
+#'   checksum is verified, because you are vouching for the file yourself.
 #'
 #' @return The path to the installed `displace` executable, invisibly.
 #' @export
 #' @examples
 #' \dontrun{
 #' install_displace()
+#'
+#' # From a locally built payload, e.g. on an offline server:
+#' install_displace(from = "displace-7f2656fb-linux-x86_64.tar.gz",
+#'                  version = "local")
+#'
 #' displace_version()
 #' }
 install_displace <- function(version = NULL,
                              overwrite = FALSE,
                              quiet = FALSE,
-                             timeout = 600) {
+                             timeout = 600,
+                             from = NULL) {
+
+  if (!is.null(from)) {
+    return(invisible(install_displace_local(from, version = version,
+                                            overwrite = overwrite,
+                                            quiet = quiet)))
+  }
+
   m <- read_manifest()
   versions <- m$versions %||% list()
 
   if (!length(versions)) {
     stopf(paste0(
       "No DISPLACE binaries have been published yet: inst/manifest.json is empty.\n",
-      "Until the build workflow has published a release, either\n",
-      "  - build DISPLACE yourself with tools/build-displace.sh and set\n",
-      "    Sys.setenv(DISPLACE_BINARY = \"/path/to/displace\"), or\n",
+      "Three ways forward:\n",
+      "  - if you already have a build, point at it:\n",
+      "      Sys.setenv(DISPLACE_BINARY = \"/path/to/displace\")\n",
+      "  - install from a locally built tarball or payload directory:\n",
+      "      install_displace(from = \"displace-<sha>-linux-x86_64.tar.gz\")\n",
+      "    (build one anywhere with tools/build-displace.sh)\n",
       "  - run the 'Build DISPLACE binary' workflow in the displaceR repository\n",
-      "    and add its manifest entry."
+      "    and add its manifest entry.\n",
+      "See docs/roadmap.md."
     ))
   }
 
@@ -241,40 +264,7 @@ install_displace <- function(version = NULL,
     warnf("manifest entry '%s' has no sha256; installing unverified.", version)
   }
 
-  ## Unpack into a staging directory and move into place, so an interrupted
-  ## install never leaves a half-populated version directory behind.
-  staging <- paste0(dest, ".tmp-", Sys.getpid())
-  unlink(staging, recursive = TRUE)
-  dir.create(staging, recursive = TRUE, showWarnings = FALSE)
-  on.exit(unlink(staging, recursive = TRUE), add = TRUE)
-
-  utils::untar(tmp, exdir = staging)
-
-  staged_exe <- file.path(staging, "displace")
-  if (!file.exists(staged_exe)) {
-    ## Some tarballs carry a leading directory. Find the executable one level down.
-    found <- list.files(staging, pattern = "^displace$", recursive = TRUE,
-                        full.names = TRUE)
-    if (!length(found)) {
-      stopf("the downloaded archive contains no 'displace' executable")
-    }
-    inner <- dirname(found[1])
-    file.rename(inner, paste0(staging, "-flat"))
-    unlink(staging, recursive = TRUE)
-    file.rename(paste0(staging, "-flat"), staging)
-  }
-
-  Sys.chmod(file.path(staging, "displace"), "0755")
-
-  unlink(dest, recursive = TRUE)
-  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-  if (!file.rename(staging, dest)) {
-    ## Rename across filesystems fails; fall back to a copy.
-    dir.create(dest, recursive = TRUE, showWarnings = FALSE)
-    file.copy(list.files(staging, full.names = TRUE), dest,
-              recursive = TRUE, copy.mode = TRUE)
-  }
-  Sys.chmod(file.path(dest, "displace"), "0755")
+  install_payload(tmp, dest, source_desc = url)
 
   ## Record what we installed so displace_version() can report it without
   ## running the binary, and so a stale cache is diagnosable.
@@ -292,6 +282,167 @@ install_displace <- function(version = NULL,
     msgf("Installed. displace_path() -> %s", exe)
   }
   invisible(exe)
+}
+
+## Unpack (or copy) a payload into `dest`, atomically.
+##
+## Everything lands in a staging directory first and is moved into place only
+## once complete, so an interrupted or failed install never leaves a
+## half-populated version directory that displace_path() would then find and
+## hand to run_displace().
+install_payload <- function(src, dest, source_desc = src) {
+  staging <- paste0(dest, ".tmp-", Sys.getpid())
+  unlink(staging, recursive = TRUE)
+  dir.create(staging, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(staging, recursive = TRUE), add = TRUE)
+
+  if (dir.exists(src)) {
+    ok <- file.copy(list.files(src, full.names = TRUE, all.files = TRUE,
+                               no.. = TRUE),
+                    staging, recursive = TRUE, copy.mode = TRUE)
+    if (!all(ok)) {
+      stopf("could not copy every file out of %s", src)
+    }
+  } else {
+    utils::untar(src, exdir = staging)
+  }
+
+  if (!file.exists(file.path(staging, "displace"))) {
+    ## Some tarballs carry a leading directory. Find the executable below and
+    ## flatten that level away.
+    found <- list.files(staging, pattern = "^displace$", recursive = TRUE,
+                        full.names = TRUE)
+    if (!length(found)) {
+      stopf(paste0("%s contains no 'displace' executable. Expected the payload ",
+                   "staged by tools/build-displace.sh: displace plus its three ",
+                   ".so files."), source_desc)
+    }
+    inner <- dirname(found[1])
+    flat <- paste0(staging, "-flat")
+    unlink(flat, recursive = TRUE)
+    file.rename(inner, flat)
+    unlink(staging, recursive = TRUE)
+    file.rename(flat, staging)
+  }
+
+  Sys.chmod(file.path(staging, "displace"), "0755")
+
+  unlink(dest, recursive = TRUE)
+  dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+  if (!file.rename(staging, dest)) {
+    ## Rename across filesystems fails; fall back to a copy.
+    dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+    file.copy(list.files(staging, full.names = TRUE, all.files = TRUE,
+                         no.. = TRUE),
+              dest, recursive = TRUE, copy.mode = TRUE)
+  }
+  Sys.chmod(file.path(dest, "displace"), "0755")
+  invisible(file.path(dest, "displace"))
+}
+
+## build-displace.sh writes build-info.json both inside the payload and beside
+## it, so a payload directory, a tarball, and an outdir all carry provenance.
+read_build_info <- function(from) {
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    return(NULL)
+  }
+  parse <- function(path) {
+    tryCatch(jsonlite::fromJSON(path), error = function(e) NULL)
+  }
+
+  if (dir.exists(from)) {
+    for (cand in c(file.path(from, "build-info.json"),
+                   file.path(dirname(from), "build-info.json"))) {
+      if (file.exists(cand)) {
+        got <- parse(cand)
+        if (!is.null(got)) {
+          return(got)
+        }
+      }
+    }
+    return(NULL)
+  }
+
+  ## A tarball: extract just the metadata rather than unpacking the whole thing
+  ## twice.
+  tmp <- tempfile("displace-info-")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
+  inside <- tryCatch(utils::untar(from, list = TRUE), error = function(e) character())
+  hit <- grep("(^|/)build-info\\.json$", inside, value = TRUE)
+  if (!length(hit)) {
+    return(NULL)
+  }
+  ok <- tryCatch({
+    utils::untar(from, files = hit[1], exdir = tmp)
+    TRUE
+  }, error = function(e) FALSE)
+  if (!ok) {
+    return(NULL)
+  }
+  parse(file.path(tmp, hit[1]))
+}
+
+## Install from a locally built tarball or payload directory.
+##
+## This is the offline route: build on any machine with a compiler, copy the
+## artefact to the server, install it here. There is no manifest entry and no
+## checksum to check against -- the caller is vouching for the file -- so this
+## reads the build's own build-info.json for provenance where it can.
+install_displace_local <- function(from, version = NULL, overwrite = FALSE,
+                                   quiet = FALSE) {
+  from <- path.expand(from)
+  if (!file.exists(from)) {
+    stopf("no such file or directory: %s", from)
+  }
+
+  info <- read_build_info(from)
+
+  version <- version %||% local_version_label(info)
+
+  dest <- file.path(displace_cache_dir(), version)
+  if (file.exists(file.path(dest, "displace")) && !overwrite) {
+    stopf(paste0("version '%s' is already installed at %s. Pass overwrite = TRUE ",
+                 "to replace it, or version = to install alongside it."),
+          version, dest)
+  }
+
+  if (!quiet) {
+    msgf("Installing DISPLACE from %s into %s", from, dest)
+  }
+
+  install_payload(from, dest, source_desc = from)
+
+  writeLines(
+    c(sprintf("version: %s", version),
+      sprintf("upstream_sha: %s", info$upstream_sha %||% "unknown (local build)"),
+      sprintf("displace_version: %s", info$displace_version %||% "unknown"),
+      sprintf("glibc_target: %s", info$glibc %||% "unknown"),
+      sprintf("url: local:%s", from),
+      sprintf("build_patches: %s", info$build_patches %||% "unknown"),
+      sprintf("installed_at: %s", format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"))),
+    file.path(dest, "displaceR-install.txt")
+  )
+
+  if (!quiet) {
+    msgf("Installed. displace_path() -> %s", file.path(dest, "displace"))
+    if (is.null(info)) {
+      msgf(paste0("No build-info.json was found alongside the payload, so the ",
+                  "upstream commit is unrecorded. displace_version() will say so."))
+    }
+  }
+  file.path(dest, "displace")
+}
+
+## Label a local build by its upstream commit where that is known, so two
+## builds from different upstream refs do not silently overwrite each other.
+local_version_label <- function(info) {
+  sha <- info$upstream_sha
+  if (!is.null(sha) && nzchar(sha)) {
+    ver <- info$displace_version %||% "displace"
+    return(sprintf("%s-%s-local", ver, substr(sha, 1, 12)))
+  }
+  "local"
 }
 
 #' Path to the DISPLACE executable
@@ -409,7 +560,7 @@ displace_installed <- function() {
 #'
 #' Reports both identities of the binary, because they are not equivalent.
 #' `displace_version` is the string DISPLACE prints, which comes from a
-#' hardcoded `#define` in `include/version.h` and changes rarely — many
+#' hardcoded `#define` in `include/version.h` and changes rarely -- many
 #' different upstream commits report `1.6.6`. `upstream_sha` is the commit the
 #' binary was actually built from, and is the value to cite in a methods
 #' section or to compare across machines.
@@ -472,7 +623,7 @@ print.displace_version <- function(x, ...) {
 
 #' Remove an installed DISPLACE binary
 #'
-#' @param version Version label to remove. Required — this function will not
+#' @param version Version label to remove. Required -- this function will not
 #'   wipe the whole cache without being told which version to drop.
 #' @return `TRUE` if something was removed, invisibly.
 #' @export
