@@ -58,7 +58,8 @@ test_that("displace_output_types describes every spec", {
   expect_true(all(c("type", "filename_pattern", "fixed_width") %in% names(types)))
   ## The variable-width ones are exactly the popnodes totals and loglike.
   expect_setequal(types$type[!types$fixed_width],
-                  c("popnodes_start", "popnodes_inc", "popnodes_end", "loglike"))
+                  c("popnodes_start", "popnodes_inc", "popnodes_end",
+                    "popnodes_impact_per_szgroup", "loglike"))
 })
 
 test_that("read_displace_output applies the layout to a real file", {

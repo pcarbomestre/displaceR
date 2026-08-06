@@ -9,11 +9,20 @@
 ##
 ##   DISPLACE_BINARY       path to a displace executable (or an install_displace()
 ##                         installation in the cache)
-##   DISPLACE_MINITEST_DIR path to an unpacked DISPLACE_input_minitest dataset
-##                         (https://displace-project.org/blog/download/)
+##   DISPLACE_MINITEST_DIR path to a clone of frabas/DISPLACE_input_minitest
+##                         (or an unpacked dataset from
+##                         https://displace-project.org/blog/download/)
+##
+## Note the parameterisation name in that dataset is "fake", not "minitest":
+## its folders are simusspe_fake/, vesselsspe_fake/ and so on. DISPLACE_INPUT_NAME
+## overrides it for other datasets.
 ##
 ## The build workflow sets both, so a new upstream build runs this before its
 ## tarball is published.
+
+minitest_name <- function() {
+  Sys.getenv("DISPLACE_INPUT_NAME", "fake")
+}
 
 minitest_dir <- function() {
   d <- Sys.getenv("DISPLACE_MINITEST_DIR", "")
@@ -34,7 +43,7 @@ skip_without_simulator <- function() {
 
 test_that("the minitest dataset passes validation", {
   skip_without_simulator()
-  v <- validate_displace_input(minitest_dir(), "minitest")
+  v <- validate_displace_input(minitest_dir(), minitest_name())
   if (!v$ok) {
     print(v)
   }
@@ -49,11 +58,11 @@ test_that("the minitest case study's own files round-trip through our readers", 
   skip_without_simulator()
   d <- minitest_dir()
 
-  cfg <- read_displace_config(d, "minitest")
+  cfg <- read_displace_config(d, minitest_name())
   expect_gt(cfg$nbpops, 0L)
   expect_length(cfg$calib_oth_landings, cfg$nbpops)
 
-  sc <- read_displace_scenario(d, "minitest", "baseline")
+  sc <- read_displace_scenario(d, minitest_name(), "baseline")
   expect_gt(sc$nrow_coord, 0L)
   expect_gt(sc$nrow_graph, 0L)
 
@@ -69,13 +78,13 @@ test_that("the minitest case study's own files round-trip through our readers", 
 
   ## Rewrite and re-read: the values must survive our writers unchanged.
   tmp <- tempfile()
-  create_displace_input(tmp, "minitest", a_graph = sc$a_graph, quiet = TRUE)
-  write_displace_config(cfg, tmp, "minitest")
-  write_displace_scenario(sc, tmp, "minitest", "baseline")
+  create_displace_input(tmp, minitest_name(), a_graph = sc$a_graph, quiet = TRUE)
+  write_displace_config(cfg, tmp, minitest_name())
+  write_displace_scenario(sc, tmp, minitest_name(), "baseline")
   write_displace_graph(g, tmp, a_graph = sc$a_graph)
 
-  cfg2 <- read_displace_config(tmp, "minitest")
-  sc2 <- read_displace_scenario(tmp, "minitest", "baseline")
+  cfg2 <- read_displace_config(tmp, minitest_name())
+  sc2 <- read_displace_scenario(tmp, minitest_name(), "baseline")
   g2 <- read_displace_graph(tmp, sc2)
 
   expect_equal(cfg2$nbpops, cfg$nbpops)
@@ -92,17 +101,26 @@ test_that("a short minitest run produces readable outputs", {
   skip_on_cran()
 
   out <- tempfile()
-  res <- run_displace(
+  ## Upstream segfaults during static destruction whenever SQLite output is on,
+  ## after the simulation has finished and everything is written. run_displace()
+  ## verifies completion from the database and warns instead of failing, so the
+  ## warning is the expected path here — see docs/upstream-issues.md, issue 3.
+  res <- suppressWarnings(run_displace(
     input_dir = minitest_dir(),
-    input_name = "minitest",
+    input_name = minitest_name(),
     sim_name = "golden",
     steps = 50,
     output_dir = out,
     echo = FALSE,
     verbosity = 0
-  )
+  ))
 
-  expect_equal(res$status, 0L)
+  ## Either a clean exit (upstream fixed it) or the known teardown crash. A
+  ## mid-run crash would have thrown out of run_displace() above.
+  if (!identical(res$status, 0L)) {
+    expect_true(res$crashed_at_exit)
+    expect_gte(res$last_tstep, res$steps - 2L)
+  }
   expect_true(dir.exists(res$output_path))
 
   ## --- SQLite ---------------------------------------------------------------
@@ -129,7 +147,7 @@ test_that("a short minitest run produces readable outputs", {
             paste(unrecognised, collapse = ", "))
   }
 
-  cfg <- read_displace_config(minitest_dir(), "minitest")
+  cfg <- read_displace_config(minitest_dir(), minitest_name())
 
   ## Read every recognised fixed-width output. A column-count mismatch means
   ## either upstream changed the layout or the transcription in R/formats.R is

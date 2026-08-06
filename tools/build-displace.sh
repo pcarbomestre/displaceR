@@ -87,6 +87,36 @@ clone_at "$MSQLITECPP_REPO" "$WORKDIR/mSqliteCpp"
 UPSTREAM_SHA="$(git -C "$WORKDIR/DISPLACE_GUI" rev-parse HEAD)"
 log "upstream $REF -> $UPSTREAM_SHA"
 
+# ---------------------------------------------------------------------------
+# 1b. Build-time patches
+# ---------------------------------------------------------------------------
+#
+# Upstream does not build out of the box at 7f2656fb. These are the smallest
+# changes that make it compile; they are applied to the checkout at build time,
+# never committed anywhere, so this stays a build pipeline rather than a fork.
+# Each one is conditional, so it becomes a no-op the moment upstream fixes it.
+#
+# Both should be reported upstream — see docs/upstream-issues.md.
+
+PATCHES_APPLIED=""
+
+# Patch 1: C++ standard.
+#
+# cmake/compiler.cmake sets CMAKE_CXX_STANDARD to 14, but commons/Population.cpp
+# and include/Population.h use std::shared_mutex and std::shared_lock, which are
+# C++17. The build fails with "'shared_mutex' is not a member of 'std'" plus the
+# telltale note "only available from C++17 onwards".
+#
+# This cannot be fixed with -DCMAKE_CXX_STANDARD=17 on the command line: a plain
+# set() in compiler.cmake creates a normal variable that shadows the cache
+# variable, so the -D is silently ignored. Editing the file is the only way.
+if grep -q 'set(CMAKE_CXX_STANDARD 14)' "$WORKDIR/DISPLACE_GUI/cmake/compiler.cmake" 2>/dev/null; then
+  log "patching cmake/compiler.cmake: C++14 -> C++17 (Population.cpp needs std::shared_mutex)"
+  sed -i 's/set(CMAKE_CXX_STANDARD 14)/set(CMAKE_CXX_STANDARD 17)/' \
+      "$WORKDIR/DISPLACE_GUI/cmake/compiler.cmake"
+  PATCHES_APPLIED="${PATCHES_APPLIED}cxx17 "
+fi
+
 # include/version.h hardcodes VERSION and is not derived from git tags, so two
 # different commits usually report the same banner. Record it as informational
 # only; the SHA above is the authoritative key.
@@ -108,6 +138,22 @@ cmake -S "$WORKDIR/mSqliteCpp" -B "$WORKDIR/mSqliteCpp/Build" \
       -DENABLE_TEST=Off -DENABLE_PROFILER=Off \
       -DCMAKE_INSTALL_PREFIX="$PREFIX"
 cmake --build "$WORKDIR/mSqliteCpp/Build" --target install -j "$JOBS"
+
+# Patch 2: msqlitecpp's exported CMake target has no include directories.
+#
+# msqlitecppTargets-release.cmake sets IMPORTED_LOCATION but never
+# INTERFACE_INCLUDE_DIRECTORIES, so linking msqlitecpp::msqlitecpp gets you the
+# shared library and none of its headers. DISPLACE then fails with
+# "msqlitecpp/v2/storage.h: No such file or directory" while compiling
+# commons/readdata.cpp.
+#
+# Rather than rewrite the generated CMake package, put the prefix on the include
+# path directly. -isystem also keeps msqlitecpp's own warnings out of the log.
+MSQLITECPP_INCLUDE_FLAG="-isystem $PREFIX/include"
+if [ ! -f "$PREFIX/include/msqlitecpp/v2/storage.h" ]; then
+  die "msqlitecpp installed but $PREFIX/include/msqlitecpp/v2/storage.h is missing"
+fi
+PATCHES_APPLIED="${PATCHES_APPLIED}msqlitecpp-includes "
 
 # ---------------------------------------------------------------------------
 # 3. DISPLACE, headless
@@ -132,6 +178,7 @@ cmake -S "$WORKDIR/DISPLACE_GUI" -B "$WORKDIR/DISPLACE_GUI/Build" \
       -DWITHOUT_GUI=On \
       -DSPARSEPP_ROOT="$WORKDIR/sparsepp" \
       -DCMAKE_PREFIX_PATH="$PREFIX" \
+      -DCMAKE_CXX_FLAGS="$MSQLITECPP_INCLUDE_FLAG" \
       -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
       -DCMAKE_INSTALL_RPATH='$ORIGIN'
 
@@ -231,6 +278,7 @@ cat > "$OUTDIR/build-info.json" <<JSON
   "built_on": "$OS_ID",
   "glibc": "${GLIBC_VERSION:-unknown}",
   "arch": "$(uname -m)",
+  "build_patches": "$(echo "$PATCHES_APPLIED" | sed 's/[[:space:]]*$//')",
   "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON

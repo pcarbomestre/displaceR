@@ -158,6 +158,19 @@ run_displace <- function(input_dir,
   output_dir <- normalizePath(output_dir, mustWork = FALSE)
   out_leaf <- file.path(output_dir, "DISPLACE_outputs", input_name, scenario)
 
+  ## With --indb the model is loaded from a SQLite database and the text file
+  ## tree need not exist at all, so the structural checks would fail on a
+  ## perfectly good case study.
+  if (validate && !is.null(indb)) {
+    db_file <- if (is_abs_path(indb)) indb else file.path(input_dir, indb)
+    if (!file.exists(db_file)) {
+      stopf(paste0("indb = '%s' does not resolve to a file (looked at %s). The ",
+                   "simulator interprets this path relative to input_dir."),
+            indb, db_file)
+    }
+    validate <- FALSE
+  }
+
   if (validate && !dry_run) {
     v <- validate_displace_input(input_dir, input_name, scenario)
     if (!v$ok) {
@@ -191,7 +204,9 @@ run_displace <- function(input_dir,
       status = NA_integer_,
       elapsed = NA_real_,
       stdout = character(),
-      started_at = NA
+      started_at = NA,
+      crashed_at_exit = FALSE,
+      last_tstep = NA_integer_
     ),
     class = "displace_run"
   )
@@ -226,17 +241,99 @@ run_displace <- function(input_dir,
   }
 
   if (!identical(res$status, 0L)) {
+    ## DISPLACE segfaults during static destruction whenever SQLite output is
+    ## enabled: a global shared_ptr<SQLiteOutputStorage> outlives the sqlite3
+    ## library and double-finalizes its statements. The simulation itself has
+    ## already finished and every output file, including the database, is
+    ## written and intact. Verified at upstream 7f2656fb; `--disable-sqlite`
+    ## exits 0 on the same input. See docs/upstream-issues.md.
+    ##
+    ## Treating this as a failure would make the package unusable for its
+    ## primary output format, but blanket-ignoring a crash would hide real
+    ## ones. So verify completion from the database itself before forgiving it.
+    completion <- run_completed_cleanly(res)
+    if (isTRUE(completion$completed)) {
+      res$crashed_at_exit <- TRUE
+      res$last_tstep <- completion$last_tstep
+      warnf(paste0(
+        "DISPLACE exited with status %d, but the run completed: the output ",
+        "database is intact and reports lastTStep = %s for %d requested steps.\n",
+        "This is a known upstream crash during static destruction that only ",
+        "happens when SQLite output is enabled; the results are unaffected.\n",
+        "Pass sqlite = FALSE to avoid it, at the cost of the database output."),
+        res$status, format(completion$last_tstep), res$steps)
+      return(res)
+    }
+
     tail_out <- if (length(res$stdout)) {
       paste0("\nLast lines of output:\n",
              paste0("  ", utils::tail(res$stdout, 20), collapse = "\n"))
     } else {
       "\n(Run with echo = FALSE to capture the simulator's output.)"
     }
-    stopf("DISPLACE exited with status %d.\nCommand: %s%s",
-          res$status, res$command, tail_out)
+    stopf("DISPLACE exited with status %d.\nCommand: %s%s%s",
+          res$status, res$command, tail_out,
+          if (nzchar(completion$reason)) {
+            paste0("\n\nCompletion check: ", completion$reason)
+          } else "")
   }
 
   res
+}
+
+## Did the simulation actually finish, despite a non-zero exit status?
+##
+## The authority is the output database's Metadata table: the simulator writes
+## lastTStep there as it goes, and createAllIndexes()/close() run at the very
+## end of main(). An intact database whose lastTStep has reached the requested
+## horizon means the work is done and only the teardown failed.
+run_completed_cleanly <- function(res) {
+  no <- function(reason) list(completed = FALSE, last_tstep = NA_integer_,
+                              reason = reason)
+
+  if (!file.exists(res$db_path)) {
+    return(no(sprintf("no output database at %s, so the run cannot be confirmed complete.",
+                      res$db_path)))
+  }
+  if (!requireNamespace("DBI", quietly = TRUE) ||
+      !requireNamespace("RSQLite", quietly = TRUE)) {
+    return(no(paste0("an output database exists but DBI/RSQLite are not ",
+                     "installed, so it cannot be checked. Install them to let ",
+                     "displaceR distinguish a completed run from a real crash.")))
+  }
+
+  out <- tryCatch({
+    con <- DBI::dbConnect(RSQLite::SQLite(), res$db_path, flags = RSQLite::SQLITE_RO)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+    if (!identical(DBI::dbGetQuery(con, "PRAGMA integrity_check")[[1]][1], "ok")) {
+      return(no("the output database fails PRAGMA integrity_check."))
+    }
+    if (!DBI::dbExistsTable(con, "Metadata")) {
+      return(no("the output database has no Metadata table."))
+    }
+    md <- DBI::dbReadTable(con, "Metadata")
+    hit <- which(as.character(md[[1]]) == "lastTStep")
+    if (!length(hit)) {
+      return(no("the output database's Metadata has no lastTStep entry."))
+    }
+    last <- suppressWarnings(as.integer(md[[2]][hit[1]]))
+    if (is.na(last)) {
+      return(no("the output database's lastTStep is not an integer."))
+    }
+    ## The simulator's last written step is steps - 1. Allow it to fall short
+    ## by one for off-by-one differences in how the final step is recorded, but
+    ## not further: a run that died halfway must still be reported as failed.
+    if (last < res$steps - 2L) {
+      return(no(sprintf(paste0("the run stopped at tstep %d of %d requested, so ",
+                               "it did not finish."), last, res$steps)))
+    }
+    list(completed = TRUE, last_tstep = last, reason = "")
+  }, error = function(e) {
+    no(sprintf("the output database could not be read: %s", conditionMessage(e)))
+  })
+
+  out
 }
 
 #' Build the DISPLACE command line
@@ -339,6 +436,7 @@ print.displace_run <- function(x, ...) {
   cat("  outputs:  ", x$output_path, "\n", sep = "")
   if (!is.na(x$status)) {
     cat("  status:   ", x$status,
+        if (isTRUE(x$crashed_at_exit)) " (completed; crashed in teardown)" else "",
         sprintf("   elapsed: %.1fs", x$elapsed), "\n", sep = "")
     cat("  database: ", x$db_path,
         if (file.exists(x$db_path)) "" else "  (not written)", "\n", sep = "")

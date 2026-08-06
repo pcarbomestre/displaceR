@@ -49,9 +49,22 @@ OUTPUT_SPECS <- list(
     types = NULL
   ),
   popnodes_impact = list(
-    pattern = "^popnodes_impact_",
+    ## Anchored past the suffix: "^popnodes_impact_" alone also matches
+    ## popnodes_impact_per_szgroup_*, which has a different width entirely.
+    pattern = "^popnodes_impact_(?!per_szgroup)",
+    perl = TRUE,
     cols = c("pop", "tstep", "node_idx", "long", "lat", "impact_on_pop"),
     types = c("i", "i", "i", "d", "d", "d")
+  ),
+  popnodes_impact_per_szgroup = list(
+    pattern = "^popnodes_impact_per_szgroup_",
+    ## pop, tstep, node, long, lat, then one value per population.
+    ## Note upstream loops over impact_per_pop.size() rather than the szgroup
+    ## vector it just fetched (commons/Node.cpp:2089), so despite the name the
+    ## trailing block is per-population, not per-size-group.
+    cols = NULL,
+    builder = "impact_per_szgroup",
+    types = NULL
   ),
   popnodes_cumulcatches_per_pop = list(
     pattern = "^popnodes_cumulcatches_per_pop_",
@@ -127,8 +140,32 @@ OUTPUT_SPECS <- list(
              "SOx_emission_percentpertotalfuelmass", "GHG_emission_gperkW",
              "PME_emission_gperkW", "fuel_use_litre", "NOx_emission",
              "SOx_emission", "GHG_emissions", "PME_emission"),
-    types = c("i", "i", "d", "d", "i", "i", "d", "d", "d", "d", "d", "d",
+    ## shiptype and nb_units read as integers in the documentation but are
+    ## written with setprecision(3) fixed, i.e. "1.000". Only tstep, node and
+    ## shipid are actually integral in the file.
+    types = c("i", "i", "d", "d", "d", "i", "d", "d", "d", "d", "d", "d",
               "d", "d", "d", "d", "d")
+  ),
+  vmslikefpingsonly = list(
+    pattern = "^vmslikefpingsonly_",
+    ## tstep, vessel, start-trip tstep, lon, lat, nodeid, course, fuelcons,
+    ## pop, then catches (landings + discards, weight) for szgroup 0..13.
+    ## Upstream writes get_fuelcons(), not the cumulative value the
+    ## documentation names, so the column is named for what it holds.
+    cols = c("tstep", "vessel", "tstep_dep", "lon", "lat", "nodeid", "course",
+             "fuelcons",  "pop",
+             sprintf("catches_szgroup%d", 0:(N_SZGROUPS - 1L))),
+    types = c("i", "c", "i", "d", "d", "i", "d", "d", "i",
+              rep("d", N_SZGROUPS))
+  ),
+  popdyn = list(
+    ## tstep, stock, then total N at each size group, in thousands.
+    ## "^popdyn_" alone would also catch popdyn_F_, popdyn_SSB_ and
+    ## popdyn_annual_indic_, which are different layouts.
+    pattern = "^popdyn_(?!F_|SSB_|annual_indic_|test)",
+    perl = TRUE,
+    cols = c("tstep", "stock", sprintf("N_szgroup%d", 0:(N_SZGROUPS - 1L))),
+    types = c("i", "i", rep("d", N_SZGROUPS))
   ),
   windmillslogs = list(
     pattern = "^windmillslogs_",
@@ -177,9 +214,20 @@ displace_output_spec <- function(type, nbpops = NULL, explicit_pops = NULL,
   switch(
     spec$builder,
     popnodes_totals = popnodes_totals_cols(nbpops),
+    impact_per_szgroup = impact_per_szgroup_cols(nbpops),
     loglike = loglike_cols(nbpops, explicit_pops),
     stopf("no column builder for '%s'", type)
   )
+}
+
+impact_per_szgroup_cols <- function(nbpops) {
+  if (is.null(nbpops)) {
+    stopf(paste0("this layout's width depends on the number of populations; ",
+                 "pass nbpops (it is in config.dat)."))
+  }
+  nbpops <- as.integer(nbpops)
+  c("pop", "tstep", "node_idx", "long", "lat",
+    sprintf("impact_sp%d", 0:(nbpops - 1L)))
 }
 
 ## popnodes_start_/inc_/end_: tstep, node, long, lat, then (tot N, tot W) per

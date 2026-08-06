@@ -32,9 +32,18 @@ displace_output_files <- function(x) {
   out[order(out$size, decreasing = TRUE), , drop = FALSE]
 }
 
+## Files DISPLACE writes into the output directory that are not tabular data,
+## and must never be matched by a layout. memstats is a free-text memory report
+## ("*** Memory Statistics:"); the freq_* files are diagnostic histograms.
+NON_TABULAR_OUTPUTS <- "^(memstats_|freq_cpue|freq_distance|freq_profit)"
+
 classify_output <- function(filename) {
+  if (grepl(NON_TABULAR_OUTPUTS, filename)) {
+    return(NA_character_)
+  }
   for (nm in names(OUTPUT_SPECS)) {
-    if (grepl(OUTPUT_SPECS[[nm]]$pattern, filename)) {
+    spec <- OUTPUT_SPECS[[nm]]
+    if (grepl(spec$pattern, filename, perl = isTRUE(spec$perl))) {
       return(nm)
     }
   }
@@ -112,8 +121,14 @@ read_displace_output <- function(x,
       stopf("unknown output type '%s'. Known: %s",
             type, paste(names(OUTPUT_SPECS), collapse = ", "))
     }
-    candidates <- list.files(dir, pattern = spec$pattern, full.names = TRUE)
-    candidates <- grep("\\.dat$", candidates, value = TRUE)
+    ## Match on the basename with the same engine classify_output() uses:
+    ## list.files(pattern=) is unanchored against the name only, and several
+    ## patterns rely on a perl look-ahead to exclude a longer sibling.
+    candidates <- list.files(dir, pattern = "\\.dat$", full.names = TRUE)
+    candidates <- candidates[
+      vapply(basename(candidates), function(b) identical(classify_output(b), type),
+             logical(1))
+    ]
     if (!is.null(sim_name)) {
       narrowed <- grep(sprintf("%s\\.dat$", sim_name), candidates, value = TRUE)
       if (length(narrowed)) {

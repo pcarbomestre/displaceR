@@ -4,47 +4,44 @@ Status of the plan in `CLAUDE.md`, as built.
 
 | Phase | Status |
 |---|---|
-| 0 — Verified build recipe | Complete (upstream). Captured in `tools/build-displace.sh`. |
-| 1 — Build pipeline | Implemented, **never executed**. Needs one green manual run. |
-| 2 — Binary distribution | Implemented. Manifest is empty until Phase 1 runs. |
-| 3 — R I/O layer | Runner and readers complete. Writers cover 4 of ~150 input formats. |
-| 4 — Tracking upstream | Watcher and golden-file harness implemented; the harness has never had a real dataset to run against. |
+| 0 — Verified build recipe | Complete, and corrected: upstream does not build unpatched. See `docs/upstream-issues.md` 1 and 2. |
+| 1 — Build pipeline | Implemented and **executed end to end**: `tools/build-displace.sh` produces a working, relocatable `displace 1.6.6`. Not yet run in GitHub Actions. |
+| 2 — Binary distribution | Implemented. Manifest is empty until a release is published. |
+| 3 — R I/O layer | Runner and readers complete and **verified against a real run**. Writers cover 4 of ~150 input formats. |
+| 4 — Tracking upstream | Watcher plus a golden-file harness that now passes against the real minitest dataset. |
 
 ## Blocking, in order
 
-### 1. Run the build workflow once
+### 1. Run the build workflow once — **needs you**
 
-Nothing downstream is real until this happens. Run **Build DISPLACE binary**
-with `upstream_ref: 7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de` and no
-`release_tag`, and read the step summary. When it is green, re-run with a
-`release_tag` and paste the manifest entry into `inst/manifest.json`.
+`tools/build-displace.sh` has been run end to end on Ubuntu 24.04 and produces a
+working binary, so the recipe is proven. What has *not* run is the same script
+inside GitHub Actions, which is the only way to get a published release asset.
 
-Everything in the workflow is transcribed from a recipe that has been verified
-by hand (see CLAUDE.md Phase 0), but the workflow itself has not run. Expect to
-iterate on it once.
+Run **Build DISPLACE binary** with
+`upstream_ref: 7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de` and no `release_tag`,
+and read the step summary. When it is green, re-run with a `release_tag` and
+paste the manifest entry into `inst/manifest.json`. This needs repository write
+access, so it is yours to trigger.
 
-### 2. Get the minitest dataset
+Until then, users can build locally and set `DISPLACE_BINARY` — that path is
+tested and works.
 
-`DISPLACE_input_minitest` is the fixture the golden-file test needs, and it was
-not available offline while this package was written. That means:
+### 2. The minitest dataset — **done**
 
-- `validate_displace_input()` has never been run against a real case study;
-- the text output layouts in `R/formats.R` are transcribed from
-  `docs/output_fileformats.md`, not verified against real files;
-- the stacked-column graph readers are verified against the *parsers* but not
-  against real data.
-
-Download from <https://displace-project.org/blog/download/>, unpack, and:
+`frabas/DISPLACE_input_minitest` is a public repository, cloned and used. Note
+its parameterisation name is **`fake`**, not `minitest`: the folders are
+`simusspe_fake/`, `vesselsspe_fake/` and so on.
 
 ```r
 Sys.setenv(DISPLACE_MINITEST_DIR = "/data/DISPLACE_input_minitest")
+Sys.setenv(DISPLACE_BINARY = "/path/to/displace")
 testthat::test_local(".")     # test-golden.R stops skipping
 ```
 
-The golden test does the round trip that matters: read a real case study with
-our readers, write it back with our writers, re-read, and compare. A one-line
-offset shared by a reader and its writer survives a synthetic round trip but not
-that one.
+The golden test passes: `validate_displace_input()` accepts the real case study,
+the config/scenario/graph readers round-trip it, and every recognised text
+output of a real 50-step run reads back with the right column count.
 
 ### 3. Confirm the target server
 
@@ -85,13 +82,40 @@ The natural next step is to port the writers from
 ideally become a package. Do that against the minitest dataset, one file family
 at a time, each with a round-trip test.
 
-### The `--indb` path
+### The `--indb` path — investigated, not yet trustworthy
 
-`CLAUDE.md` flags SQLite input (`DatabaseModelLoader`, `commons/DatabaseInputImpl/`)
-as likely a better R interface than emitting the text-file zoo, and it probably
-is. `run_displace(indb = ...)` passes the flag through, but nothing in this
-package *builds* such a database. Worth investigating before writing 150 text
-writers: if the schema is stable, one `RSQLite` writer replaces all of them.
+This was the roadmap's biggest open question and it now has a partial answer.
+
+`minitest` ships `baseline.db` and `areaclosure.db`: the whole case study in
+**30 normalized SQLite tables**, replacing the ~150 text files. `Nodes` alone
+subsumes `coord0.dat` and all fifteen `coord0_with_*.dat` files as ordinary
+columns. As an R target this is dramatically better than the text zoo — one
+`RSQLite` writer instead of 150 formatters.
+
+The path runs: `--indb baseline.db` completes and produces the full output set.
+
+**But it does not reproduce the text-input results.** Same dataset, scenario and
+step count:
+
+| Output table | `--indb` | text |
+|---|---|---|
+| `VesselVmsLike` | 27 | 73 |
+| `VesselLogLike` | 1 | 2 |
+| `PopValues` | 0 | 123 |
+| `NodesEnvt` | 41 | 41 |
+
+`PopValues` empty means population dynamics are not being recorded on the
+database path at all. Until it is known whether the shipped `.db` is simply
+stale relative to the text files, or `DatabaseModelLoader` is incomplete, this
+cannot be recommended — and building a writer against it would be premature.
+
+**Next step:** ask upstream how `baseline.db` is generated, and regenerate one
+from the current text inputs to see whether the two paths then agree. If they
+do, the database writer becomes the main input story and the 150 text writers
+are never needed.
+
+`run_displace(indb = ...)` passes the flag through and skips text-tree
+validation when it is set, so the path is usable for experimentation today.
 
 ### Version-dispatched readers
 
