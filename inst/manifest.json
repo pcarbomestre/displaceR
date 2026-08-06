@@ -40,6 +40,22 @@
       }
     }
   },
-  "default": null,
-  "versions": {}
+  "default": "1.6.6-7f2656fb",
+  "versions": {
+    "1.6.6-7f2656fb": {
+      "upstream_sha": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
+      "upstream_ref": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
+      "displace_version": "1.6.6",
+      "displace_build": "0",
+      "released": "2026-08-06",
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb/displace-7f2656fb7cd4-linux-x86_64-glibc2.39.tar.gz",
+          "sha256": "f1f2b9327fc4a3816555ce4decee68173e115ce50b549c426e571e21ae487fa1",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        }
+      }
+    }
+  }
 }

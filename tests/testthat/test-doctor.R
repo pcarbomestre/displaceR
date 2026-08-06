@@ -99,13 +99,32 @@ test_that("a binary that does not run is reported as a failure", {
 })
 
 test_that("an empty manifest warns rather than failing", {
-  ## Not having published a release yet is a normal state -- there are other
-  ## ways to install -- so it must not read as a broken environment.
+  ## Not having published a release is a normal state -- there are other ways
+  ## to install -- so it must not read as a broken environment.
+  ##
+  ## This drives the empty case through a stub rather than relying on the
+  ## shipped inst/manifest.json being empty. It was written against an empty
+  ## manifest and started failing the moment a release was published, which
+  ## tested the file's current contents rather than the behaviour.
+  local_mocked_bindings(read_manifest = function() list(default = NULL, versions = list()))
   withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
     d <- displace_doctor(verbose = FALSE)
     row <- d[d$check == "manifest", ]
     expect_equal(row$status, "warn")
     expect_match(row$detail, "install_displace\\(from")
+  })
+})
+
+test_that("a populated manifest reports the versions it offers", {
+  local_mocked_bindings(read_manifest = function() list(
+    default = "1.6.6-test",
+    versions = list("1.6.6-test" = list(upstream_sha = "abc123"))
+  ))
+  withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {
+    d <- displace_doctor(verbose = FALSE)
+    row <- d[d$check == "manifest", ]
+    expect_equal(row$status, "ok")
+    expect_match(row$detail, "1\\.6\\.6-test")
   })
 })
 

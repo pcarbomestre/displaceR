@@ -96,8 +96,11 @@ test_that("the cache directory honours DISPLACER_CACHE", {
 })
 
 test_that("install_displace explains itself when no binaries are published", {
-  ## The shipped manifest is empty until the build workflow publishes one, and
-  ## that state must produce actionable advice rather than a subscript error.
+  ## An empty manifest must produce actionable advice rather than a subscript
+  ## error. Stub it: this was written when the shipped manifest happened to be
+  ## empty, and once a release was published the same call started reaching out
+  ## to GitHub -- a unit test silently became a network test.
+  local_mocked_bindings(read_manifest = function() list(default = NULL, versions = list()))
   expect_error(install_displace(), "DISPLACE_BINARY")
 })
 

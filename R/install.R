@@ -248,7 +248,20 @@ install_displace <- function(version = NULL,
       TRUE
     },
     error = function(e) {
-      stopf("failed to download %s: %s", url, conditionMessage(e))
+      msg <- conditionMessage(e)
+      ## A 404 on a release asset almost always means the repository hosting it
+      ## is private, not that the manifest URL is wrong: `gh` can fetch the same
+      ## asset because it authenticates, while download.file() cannot. Saying so
+      ## turns a dead end into an actionable message.
+      hint <- if (grepl("404|cannot open URL", msg)) paste0(
+        "\n  The asset was not found. If the release exists, the repository ",
+        "hosting it is\n  probably private -- release assets of a private repo ",
+        "are not publicly\n  downloadable. Either make it public, or install ",
+        "from a local copy:\n",
+        "      install_displace(from = \"<downloaded>.tar.gz\")\n",
+        "      Sys.setenv(DISPLACE_BINARY = \"/path/to/displace\")"
+      ) else ""
+      stopf("failed to download %s: %s%s", url, msg, hint)
     }
   )
   stopifnot(ok)
