@@ -1,8 +1,11 @@
 name: R-CMD-check
 
 on:
+  # No branch filter on purpose. This repository's default branch is neither
+  # `main` nor `master`, and a filter naming only those means the check never
+  # runs and never reports — the worst failure mode for a CI job, because it
+  # looks identical to passing.
   push:
-    branches: [main, master]
   pull_request:
   workflow_dispatch:
 
