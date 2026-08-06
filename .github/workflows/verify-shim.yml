@@ -1,0 +1,20 @@
+name: Verify random_shuffle shim
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the shim against libstdc++'s random_shuffle
+        run: |
+          set -euo pipefail
+          cd tools/patches
+          # C++14: std::random_shuffle still exists, so both can run side by side.
+          g++ -std=c++14 -I. -o shimtest random_shuffle_compat_test.cpp
+          ./shimtest | tee out.txt
+          if grep -q "NO" out.txt; then
+            echo "::error::the shim does NOT reproduce libstdc++'s permutation"
+            exit 1
+          fi
+          echo "shim matches libstdc++ for every seed tested"
