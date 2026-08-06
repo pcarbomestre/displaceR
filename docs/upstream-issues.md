@@ -326,3 +326,112 @@ displaceR's roadmap. See `docs/roadmap.md`.
 
 displaceR passes `--indb` through and skips text-tree validation when it is
 used, but does not yet write such databases.
+
+---
+
+# macOS / Apple Silicon findings
+
+Issues 13-15 were found attempting the headless simulator on macOS 15
+(arm64, Apple clang 17, Boost 1.90, CMake 4.x, sqlite 3.51). Unlike everything
+above, **these are not worked around in this repository** -- issue 14 needs a
+source change, which is upstream's call. See `docs/roadmap.md`.
+
+Encouraging context: the `displace` target links only `commons`, `formats`,
+`msqlitecpp`, `Boost::program_options` and `Boost::filesystem` -- **no Qt at
+all** -- and carries no `-march`/SSE/AVX flags. Every `__x86_64__` in the tree
+is inside vendored `sqlite3.c` or `CrashHandler.cpp`, all `#ifdef`-guarded.
+Nothing structural prevents an Apple Silicon build.
+
+## 13. `msqlitecpp` links `SQLite::SQLite3` without a `find_package(SQLite3)`
+
+`mSqliteCpp/src/CMakeLists.txt:88,100` link the imported target
+`SQLite::SQLite3`, but no `CMakeLists.txt` in that project ever calls
+`find_package(SQLite3)`. CMake then treats the undefined target as a plain
+library name and passes the literal string to the linker:
+
+```
+ld: library 'SQLite::SQLite3' not found
+```
+
+Invisible on Linux, where `libsqlite3` is on the default link path so the
+preceding `-lsqlite3` satisfies the symbols anyway. On macOS, Homebrew's sqlite
+is keg-only and the link fails.
+
+**Fix:** add `find_package(SQLite3 REQUIRED)` in `mSqliteCpp/CMakeLists.txt`.
+This is a bug in `studiofuga/mSqliteCpp`, not in DISPLACE, and should be
+reported there.
+
+## 14. `random_shuffle` was removed in C++17 -- **blocks the macOS build**
+
+`std::random_shuffle` was deprecated in C++11 and **removed in C++17**. Six
+live call sites remain:
+
+```
+commons/diffusion.cpp:84, 157, 235
+commons/Vessel.cpp:7453, 8951
+simulator/main.cpp:2873
+```
+
+(plus two commented-out uses at `Vessel.cpp:7138,7277`).
+
+This is latent on Linux only because libstdc++ still furnishes the symbol as an
+extension. libc++ does not, so with the C++17 level that issue 1 forces, the
+build fails:
+
+```
+error: use of undeclared identifier 'random_shuffle'
+```
+
+Note the interaction: **issue 1 and issue 14 cannot both be satisfied by build
+flags.** C++17 is required for `std::shared_mutex` and forbids
+`random_shuffle`.
+
+**Fix:** replace with `std::shuffle` plus an explicit URBG.
+
+**Why this is not patched here:** `random_shuffle` draws from `rand()`, while
+`std::shuffle` requires a generator supplied by the caller. Substituting one
+changes the simulation's random stream, so a patched macOS binary could produce
+different results from an unpatched Linux one. Given that runs are already not
+reproducible (issue 11), silently introducing a second source of divergence in
+a package other people rely on is not defensible. This needs an upstream
+decision about which generator to seed and from where.
+
+## 15. `Boost` components requested that no longer exist
+
+`cmake/dependencies.cmake:6` requires:
+
+```cmake
+find_package(Boost 1.55 REQUIRED COMPONENTS date_time filesystem system thread
+             program_options log unit_test_framework)
+```
+
+`Boost.System` has been header-only since 1.69 and ships no compiled library;
+Homebrew's Boost 1.90 provides no `boost_system` config package, so configure
+fails outright:
+
+```
+Could not find a package configuration file provided by "boost_system"
+```
+
+`unit_test_framework` is likewise absent in that layout and is only needed when
+`WITH_TESTS` is on. The headless simulator links just `program_options` and
+`filesystem`.
+
+**Fix:** drop `system`, and move `unit_test_framework` inside the tests guard
+(same class of problem as issue 9's GDAL).
+
+---
+
+# The ask that would make most of this moot
+
+Every issue above is downstream of one fact: **there are no official headless
+binaries**, so each user must build DISPLACE themselves.
+
+Upstream already publishes a Windows installer on its releases page and a macOS
+package on Google Drive. If those releases also carried the **headless
+`displace` executable** for Linux, macOS and Windows, `displaceR` would not
+need a build pipeline at all -- it would download and run, the way `r4ss` does
+with Stock Synthesis. That would delete an entire layer of this project and
+give every DISPLACE user reproducible, versioned binaries.
+
+This is the single highest-leverage request to make of the maintainer.

@@ -61,6 +61,42 @@ This picks the runner. The build workflow currently produces both a glibc 2.35
 between them, so a wrong guess is recoverable — but building only what is needed
 halves the CI time.
 
+## Platform support — where the line is drawn, and why
+
+DISPLACE runs on Linux, macOS and Windows. `displaceR` is platform-agnostic
+throughout: `displace_doctor()`, `displace_path()` and `run_displace()` all
+work wherever a `displace` binary exists. What differs per platform is only
+whether **this project can publish a binary** for it.
+
+| Platform | `install_displace()` | Why |
+|---|---|---|
+| Linux x86_64 | Yes (once a release is published) | Build recipe proven end to end |
+| Windows x64 | Intended | Upstream ships an installer; the headless target needs no Qt |
+| macOS arm64 | **No** | Blocked on `random_shuffle`, see below |
+
+### macOS is blocked on a source change, not a build flag
+
+The headless simulator **configures and very nearly compiles** on Apple
+Silicon. Three upstream problems were found and two are fixable from CMake
+alone (`docs/upstream-issues.md` 13 and 15). The third is not:
+
+`std::random_shuffle` was removed in C++17, and six live call sites remain
+(`diffusion.cpp`, `Vessel.cpp`, `main.cpp`). libstdc++ still provides it as an
+extension, which is why Linux never noticed; libc++ does not. Since issue 1
+*forces* C++17 for `std::shared_mutex`, the two constraints collide: **no
+combination of build flags satisfies both.**
+
+**The decision: do not patch it here.** `random_shuffle` draws from `rand()`
+while `std::shuffle` takes a caller-supplied generator, so any substitution
+changes the simulation's random stream. Runs are already not reproducible
+(issue 11); adding a second, silent source of divergence — one that would make
+macOS results differ from Linux results in a package other people depend on —
+is not a call this project should make unilaterally. It belongs upstream, with
+a deliberate choice of generator and seeding.
+
+Until then macOS users build locally and set `DISPLACE_BINARY`, and
+`displace_doctor()` says so plainly rather than failing.
+
 ## A CI trap worth not re-learning
 
 `R-CMD-check.yaml` originally filtered its push trigger on `[main, master]`.

@@ -34,7 +34,9 @@ MSQLITECPP_REPO="${MSQLITECPP_REPO:-https://github.com/studiofuga/mSqliteCpp.git
 REF=""
 WORKDIR="$(pwd)/.displace-build"
 OUTDIR="$(pwd)/dist"
-JOBS="$( (nproc 2>/dev/null) || echo 2)"
+# nproc is GNU coreutils and absent on macOS, where sysctl is the equivalent.
+# Without this the build silently drops to 2 jobs on a machine with many cores.
+JOBS="$( (nproc 2>/dev/null) || (sysctl -n hw.ncpu 2>/dev/null) || echo 2)"
 
 die() { echo "error: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
@@ -52,9 +54,38 @@ done
 
 [ -n "$REF" ] || die "--ref is required (an upstream tag, branch or commit SHA)"
 
-for tool in git cmake c++ patchelf; do
+HOST_OS="$(uname -s)"
+
+for tool in git cmake c++; do
   command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
 done
+
+# patchelf is ELF-only, so it is required on Linux and meaningless on macOS,
+# where install_name_tool does the equivalent job and ships with Xcode.
+if [ "$HOST_OS" = "Linux" ]; then
+  command -v patchelf >/dev/null 2>&1 || die "missing required tool: patchelf"
+fi
+
+# macOS is not a supported *download* target: the build is blocked upstream by
+# std::random_shuffle, removed in C++17 and still used at six sites. Fixing it
+# means changing the simulation's RNG stream, which is upstream's call, not
+# ours. Everything up to that point works, so let a Mac user get as far as they
+# can and say plainly where it stops. See docs/roadmap.md.
+if [ "$HOST_OS" = "Darwin" ]; then
+  cat >&2 <<'MACWARN'
+warning: macOS builds are not supported and are expected to fail.
+
+  Upstream still calls std::random_shuffle (removed in C++17) at six sites in
+  commons/diffusion.cpp, commons/Vessel.cpp and simulator/main.cpp. libstdc++
+  provides it as an extension, so Linux builds succeed; libc++ does not.
+
+  This script applies every fix that does not alter simulation behaviour, so
+  the build will proceed until it reaches those call sites and stop there.
+
+  See docs/upstream-issues.md 14.
+
+MACWARN
+fi
 
 mkdir -p "$WORKDIR" "$OUTDIR"
 WORKDIR="$(cd "$WORKDIR" && pwd)"
@@ -100,6 +131,12 @@ log "upstream $REF -> $UPSTREAM_SHA"
 
 PATCHES_APPLIED=""
 
+# BSD sed (macOS) requires an argument to -i; GNU sed (Linux) requires that it
+# be absent. One helper keeps every patch below identical on both.
+sed_i() {
+  if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
+}
+
 # Patch 1: C++ standard.
 #
 # cmake/compiler.cmake sets CMAKE_CXX_STANDARD to 14, but commons/Population.cpp
@@ -112,9 +149,42 @@ PATCHES_APPLIED=""
 # variable, so the -D is silently ignored. Editing the file is the only way.
 if grep -q 'set(CMAKE_CXX_STANDARD 14)' "$WORKDIR/DISPLACE_GUI/cmake/compiler.cmake" 2>/dev/null; then
   log "patching cmake/compiler.cmake: C++14 -> C++17 (Population.cpp needs std::shared_mutex)"
-  sed -i 's/set(CMAKE_CXX_STANDARD 14)/set(CMAKE_CXX_STANDARD 17)/' \
+  sed_i 's/set(CMAKE_CXX_STANDARD 14)/set(CMAKE_CXX_STANDARD 17)/' \
       "$WORKDIR/DISPLACE_GUI/cmake/compiler.cmake"
   PATCHES_APPLIED="${PATCHES_APPLIED}cxx17 "
+fi
+
+# Patch 1b: Boost components that no longer exist.
+#
+# cmake/dependencies.cmake requires date_time, system, log and
+# unit_test_framework. Boost.System has been header-only since 1.69 and ships no
+# compiled library, so Boost >= 1.87 (Homebrew 1.90) has no boost_system config
+# package and configure fails outright with "Could not find a package
+# configuration file provided by boost_system". unit_test_framework is likewise
+# only needed when WITH_TESTS is on.
+#
+# The headless simulator links only program_options and filesystem
+# (simulator/CMakeLists.txt:50-58). Ask for what is actually used. On Ubuntu's
+# older Boost this line does not match and the patch is a no-op.
+# See docs/upstream-issues.md 15.
+#
+# Only patch when the components are genuinely absent: on Ubuntu's Boost 1.83
+# they are all present and the original line is correct, so leaving it alone
+# keeps this build byte-identical to the one already verified.
+boost_system_missing() {
+  # A compiled Boost.System library exists on older Boost and not on newer.
+  ! ls /usr/lib/*/libboost_system.* /usr/lib/libboost_system.* \
+       "$(brew --prefix boost 2>/dev/null)"/lib/libboost_system.* \
+     >/dev/null 2>&1
+}
+
+BOOST_LINE='COMPONENTS date_time filesystem system thread program_options log unit_test_framework'
+if grep -q "$BOOST_LINE" "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake" 2>/dev/null &&
+   boost_system_missing; then
+  log "patching cmake/dependencies.cmake: dropping Boost components that no longer exist"
+  sed_i "s/$BOOST_LINE/COMPONENTS filesystem thread program_options/" \
+      "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake"
+  PATCHES_APPLIED="${PATCHES_APPLIED}boost-components "
 fi
 
 # include/version.h hardcodes VERSION and is not derived from git tags, so two
@@ -132,10 +202,30 @@ log "reported version: ${DISPLACE_VERSION:-unknown} build ${DISPLACE_BUILD:-unkn
 # 2. msqlitecpp — not packaged anywhere, must be built from source
 # ---------------------------------------------------------------------------
 
+# msqlitecpp's src/CMakeLists.txt links the imported target SQLite::SQLite3 but
+# no CMakeLists in that project ever calls find_package(SQLite3). CMake then
+# passes the literal string to the linker: "ld: library 'SQLite::SQLite3' not
+# found". On Linux libsqlite3 is on the default link path so the symbols resolve
+# anyway and nobody notices; where sqlite is keg-only (Homebrew) it fails.
+#
+# Define the target via CMAKE_PROJECT_INCLUDE, which CMake evaluates directly
+# after project() and before src/ is processed. Harmless on Linux, where
+# find_package(SQLite3) simply succeeds. See docs/upstream-issues.md 13.
+cat > "$WORKDIR/sqlite-target-shim.cmake" <<'SHIM'
+find_package(SQLite3 QUIET)
+if (NOT TARGET SQLite::SQLite3)
+    add_library(SQLite::SQLite3 UNKNOWN IMPORTED)
+    set_target_properties(SQLite::SQLite3 PROPERTIES
+        IMPORTED_LOCATION "${SQLite3_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIR}")
+endif()
+SHIM
+
 log "building msqlitecpp"
 cmake -S "$WORKDIR/mSqliteCpp" -B "$WORKDIR/mSqliteCpp/Build" \
       -DCMAKE_BUILD_TYPE=Release \
       -DENABLE_TEST=Off -DENABLE_PROFILER=Off \
+      -DCMAKE_PROJECT_INCLUDE="$WORKDIR/sqlite-target-shim.cmake" \
       -DCMAKE_INSTALL_PREFIX="$PREFIX"
 cmake --build "$WORKDIR/mSqliteCpp/Build" --target install -j "$JOBS"
 
