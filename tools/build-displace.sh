@@ -154,35 +154,49 @@ if grep -q 'set(CMAKE_CXX_STANDARD 14)' "$WORKDIR/DISPLACE_GUI/cmake/compiler.cm
   PATCHES_APPLIED="${PATCHES_APPLIED}cxx17 "
 fi
 
-# Patch 1b: Boost components that no longer exist.
-#
-# cmake/dependencies.cmake requires date_time, system, log and
-# unit_test_framework. Boost.System has been header-only since 1.69 and ships no
-# compiled library, so Boost >= 1.87 (Homebrew 1.90) has no boost_system config
-# package and configure fails outright with "Could not find a package
-# configuration file provided by boost_system". unit_test_framework is likewise
-# only needed when WITH_TESTS is on.
-#
-# The headless simulator links only program_options and filesystem
-# (simulator/CMakeLists.txt:50-58). Ask for what is actually used. On Ubuntu's
-# older Boost this line does not match and the patch is a no-op.
-# See docs/upstream-issues.md 15.
-#
-# Only patch when the components are genuinely absent: on Ubuntu's Boost 1.83
-# they are all present and the original line is correct, so leaving it alone
-# keeps this build byte-identical to the one already verified.
-boost_system_missing() {
-  # A compiled Boost.System library exists on older Boost and not on newer.
-  ! ls /usr/lib/*/libboost_system.* /usr/lib/libboost_system.* \
-       "$(brew --prefix boost 2>/dev/null)"/lib/libboost_system.* \
-     >/dev/null 2>&1
+# Ask CMake whether a compiled Boost component is actually findable, rather
+# than guessing at library paths. Probing /usr/lib for libboost_system.* is what
+# an earlier version of this patch did, and it guessed wrong on Ubuntu 24.04 --
+# firing the patch on a platform that did not need it and breaking a working
+# build. CMake's own answer is the only one that matters here.
+boost_component_exists() {
+  local comp="$1" probe="$WORKDIR/.boost-probe"
+  rm -rf "$probe"; mkdir -p "$probe"
+  cat > "$probe/CMakeLists.txt" <<PROBE
+cmake_minimum_required(VERSION 3.16)
+project(boostprobe LANGUAGES CXX)
+find_package(Boost COMPONENTS $comp)
+if (NOT TARGET Boost::$comp)
+    message(FATAL_ERROR "absent")
+endif()
+PROBE
+  cmake -S "$probe" -B "$probe/build" >/dev/null 2>&1
 }
 
+# Patch 1b: Boost::system no longer exists as a compiled component.
+#
+# Boost.System has been header-only since 1.69 and ships no compiled library, so
+# Boost >= 1.87 (Homebrew 1.90) provides no boost_system config package and
+# configure fails outright:
+#
+#   Could not find a package configuration file provided by "boost_system"
+#
+# Drop `system` and NOTHING else. Every other component in that line is real and
+# still present on Boost 1.90 (probed), and several are genuinely linked:
+# commons/CMakeLists.txt:198 links Boost::date_time, simulator/CMakeLists.txt:56
+# links program_options and filesystem. An earlier version of this patch trimmed
+# the list to what the simulator links directly and broke the Ubuntu build with
+# "Target commons links to Boost::date_time but the target was not found".
+#
+# Guarded on a CMake probe, so on Ubuntu's Boost 1.83 -- where system still
+# exists -- this is a no-op and the build stays byte-identical to the verified
+# one. See docs/upstream-issues.md 15.
 BOOST_LINE='COMPONENTS date_time filesystem system thread program_options log unit_test_framework'
+BOOST_FIXED='COMPONENTS date_time filesystem thread program_options log unit_test_framework'
 if grep -q "$BOOST_LINE" "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake" 2>/dev/null &&
-   boost_system_missing; then
-  log "patching cmake/dependencies.cmake: dropping Boost components that no longer exist"
-  sed_i "s/$BOOST_LINE/COMPONENTS filesystem thread program_options/" \
+   ! boost_component_exists system; then
+  log "patching cmake/dependencies.cmake: dropping Boost::system (header-only since 1.69)"
+  sed_i "s/$BOOST_LINE/$BOOST_FIXED/" \
       "$WORKDIR/DISPLACE_GUI/cmake/dependencies.cmake"
   PATCHES_APPLIED="${PATCHES_APPLIED}boost-components "
 fi
