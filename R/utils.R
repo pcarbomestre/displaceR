@@ -65,7 +65,15 @@ join_nums <- function(x) paste(format(x, trim = TRUE, scientific = FALSE), colla
 ## produces for very small or very large values in some locales, so pin the
 ## format explicitly.
 fmt_num <- function(x) {
-  format(x, trim = TRUE, scientific = FALSE, digits = 15)
+  if (is.integer(x)) {
+    return(as.character(x))
+  }
+  ## as.character() gives R's shortest representation that round-trips exactly,
+  ## so 54.3473507 stays 54.3473507 rather than gaining a trailing zero from a
+  ## fixed digit count. It can emit scientific notation for extreme values,
+  ## which is fine: DISPLACE parses these with boost::lexical_cast<double>,
+  ## which accepts it.
+  as.character(x)
 }
 
 is_abs_path <- function(p) {

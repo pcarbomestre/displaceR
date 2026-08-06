@@ -273,7 +273,27 @@ displaceR simply leaves IPC enabled; it is inert unless `--use-gui` is passed.
 
 ---
 
-## 11. `--indb` runs but does not reproduce the text-input results
+## 11. Runs are not reproducible
+
+Two runs with identical inputs, an identical `sim_name` and an identical step
+count produce different outputs. On a 2000-step minitest run, 13 of 39 text
+output files differed between two invocations; the other 26 were stable across
+repeated runs, so this is not a filesystem or timestamp artefact.
+
+`main()` calls `simModel->initRandom(namesimu)`, which suggests the intent is a
+name-seeded, reproducible run. Something outside that seeding -- plausibly the
+threaded vessel movement -- is not covered.
+
+**Why it matters:** it makes exact reproduction from inputs impossible, and it
+means any regression test has to determine empirically which outputs are stable
+before comparing them. `displaceR::check_displace_roundtrip()` does that by
+running the reference twice.
+
+Worth confirming upstream whether this is intended.
+
+---
+
+## 12. `--indb` runs but does not reproduce the text-input results
 
 `minitest` ships `baseline.db` and `areaclosure.db`, SQLite databases holding
 the whole case study in 30 normalized tables, loaded with `--indb`. The run

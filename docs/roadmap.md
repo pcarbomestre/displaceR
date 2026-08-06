@@ -58,7 +58,45 @@ halves the CI time.
 
 ## Deliberately not implemented
 
-### A full case-study writer
+### A full case-study writer -- partly started, and instructive
+
+**What was added:** `read_displace_table()` / `write_displace_table()` for the
+header-plus-records format that most `*spe_` input files use, and
+`read_displace_vessel_features()` / `write_displace_vessel_features()` for the
+`|`-separated vessel file. Together these read all 575 `.dat` files in
+`DISPLACE_input_minitest` and value-round-trip every one.
+
+**And the important part: reading them all back in R proved nothing.** A writer
+and its matching reader share their assumptions, so a wrong pair round-trips
+perfectly. The test that actually settles it is to rewrite the inputs, run the
+simulator on both trees, and compare -- and doing that revealed real corruption:
+
+| Family rewritten | Simulator outputs changed? |
+|---|---|
+| `harboursspe_`, `benthosspe_`, `fishfarmsspe_`, `windmillsspe_` | no |
+| `metiersspe_`, `popsspe_` | no, **once headerless files are refused** |
+| `vesselsspe_`, `shipsspe_` | **yes -- not yet safe to write** |
+
+Two causes, both now guarded against at read time rather than silently
+propagated:
+
+* **Not every file has a header.** `popsspe_*/0spe_initial_tac.dat` is a bare
+  `10000`. Read with `header = TRUE` its only record became a column name and
+  the round trip wrote the corruption back. Any all-numeric first line is now
+  refused with a message naming `header = FALSE`.
+* **Not every file is whitespace separated.** `shipsspe_features.dat` and
+  `firms_specs.dat` use `|`; read as whitespace they gave one mangled column
+  and no error. Now refused.
+
+A third, subtler one: formatting numbers with a fixed digit count rewrote
+`54.3473507` as `54.34735070`. Values equal, bytes different. Now fixed by
+using R's shortest round-tripping representation.
+
+**Still to do:** `vesselsspe_` and `shipsspe_` need per-file work before their
+writers can be trusted. Use `check_displace_roundtrip()` to verify any writer
+against your own case study before relying on it.
+
+### A full case-study writer -- the remaining bulk
 
 Appendix B of `CLAUDE.md` catalogues roughly 150 input files across
 `popsspe_`, `vesselsspe_`, `metiersspe_`, `harboursspe_`, `benthosspe_`,
@@ -130,6 +168,27 @@ not a rewrite.
 plots them. This package does not depend on it or duplicate its plotting.
 Whether the two should be joined up is worth a conversation with the maintainer
 rather than a unilateral decision here.
+
+## DISPLACE is not reproducible
+
+Worth knowing before designing any regression test or publishing any result.
+Given **identical inputs, an identical `sim_name` and an identical step count**,
+about a third of DISPLACE's text outputs differ between two runs -- 13 of 39 on
+a 2000-step minitest run. `SimModel::initRandom(namesimu)` does not fully
+determinise it.
+
+Consequences:
+
+* Golden-file comparison has to establish which outputs are stable first, by
+  running the reference twice, and compare only those.
+  `check_displace_roundtrip()` does this.
+* Replicates are genuinely stochastic even with a fixed name, so
+  `run_displace_replicates()` gives variation whether or not you want it.
+* A result cannot be reproduced exactly from the inputs alone. Cite the
+  upstream commit and archive the output database.
+
+Whether this is intentional (threaded vessel movement) or a seeding bug is
+worth asking upstream.
 
 ## Open questions inherited from CLAUDE.md
 
