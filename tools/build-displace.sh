@@ -22,8 +22,10 @@
 # Usage:
 #   tools/build-displace.sh --ref <upstream-git-ref> [--workdir DIR] [--outdir DIR]
 #
-# Produces $OUTDIR/payload/ containing the four runtime files with
-# RPATH=$ORIGIN, plus $OUTDIR/build-info.json.
+# Produces $OUTDIR/payload/ with RPATH=$ORIGIN, plus $OUTDIR/build-info.json.
+# The payload holds the displace binary, the DISPLACE shared libraries, and (on
+# Linux) every third-party dependency except the platform ABI floor -- see
+# section 4b for why Boost and GeographicLib have to travel with it.
 
 set -euo pipefail
 
@@ -474,6 +476,75 @@ for extra in avaifieldshuffler avaifieldupdater vmsmerger; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# 4b. Bundle the third-party runtime libraries (Linux only)
+# ---------------------------------------------------------------------------
+#
+# Boost and GeographicLib are linked dynamically but are NOT "stock system
+# libs": they arrive on the build machine via libboost-all-dev and
+# libgeographiclib-dev, which are *build* dependencies. A bare compute server
+# has no reason to have them, and then the binary dies at startup with
+#
+#   error while loading shared libraries: libboost_program_options.so.1.83.0
+#
+# even though the OS and glibc match the builder exactly. The ldd check below
+# cannot catch this on its own, because the runner *does* have the dev packages
+# installed -- clearing LD_LIBRARY_PATH does not hide /usr/lib/x86_64-linux-gnu.
+#
+# So bundle every dependency except the ones that make up the platform ABI.
+# Derived from ldd rather than a hardcoded list, so a new upstream dependency is
+# picked up automatically instead of surfacing as a broken tarball.
+#
+# The denylist is the important half. libc/libstdc++/libgcc_s and friends are
+# shared by every library in the process -- R has already loaded libstdc++
+# before displace runs -- and shipping a second copy is how you get mismatched
+# allocators and broken exception handling. Symbol versioning is one-directional
+# too: a newer libstdc++ satisfies old symbols, never the reverse, so a bundled
+# one that is older than the host's is uniquely bad. Those are handled by the
+# build-on-oldest-glibc rule instead (see CLAUDE.md), not by bundling.
+#
+# Safe because RPATH=$ORIGIN (set below) puts the payload dir ahead of the
+# system paths for this binary only: nothing is installed system-wide and no
+# other program's view of Boost changes. Matching is by SONAME, so a bundled
+# 1.83 and a system 1.74 are different libraries and coexist.
+#
+# macOS is deliberately not handled here. Mach-O records an absolute install
+# name in each dependent, so bundling there means rewriting paths with
+# install_name_tool -change, not just copying -- a different mechanism with its
+# own signing wrinkles. The macOS payload keeps relying on Homebrew until
+# someone actually needs otherwise.
+# Leaf libraries only. Anything matching this is part of the ABI floor that the
+# whole process shares, and must come from the host. Defined outside the block
+# below because the verification step in section 5 applies the same rule.
+ABI_FLOOR='^(libc|libstdc\+\+|libgcc_s|libm|libpthread|libdl|librt|libutil|libresolv|ld-linux.*|linux-vdso)\.'
+
+if [ "$HOST_OS" != "Darwin" ]; then
+  log "bundling third-party runtime libraries"
+  bundled=0
+  # ldd prints "  libfoo.so.1 => /path/to/libfoo.so.1 (0x...)"; take pairs where
+  # a real path was resolved. Entries without "=>" are the vdso and the loader.
+  while read -r soname _arrow libpath _rest; do
+    [ -n "${libpath:-}" ] || continue
+    [ "${libpath#/}" != "$libpath" ] || continue   # must be an absolute path
+    [ -f "$libpath" ] || continue
+
+    if printf '%s' "$soname" | grep -Eq "$ABI_FLOOR"; then
+      continue
+    fi
+    # Already staged (libcommons, libformats, libmsqlitecpp).
+    if [ -e "$PAYLOAD/$soname" ]; then
+      continue
+    fi
+
+    cp -L "$libpath" "$PAYLOAD/$soname"
+    log "  bundled $soname"
+    bundled=$((bundled + 1))
+  done <<EOF
+$(ldd "$PAYLOAD/displace" 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\//')
+EOF
+  log "bundled $bundled third-party libraries"
+fi
+
 log "setting RPATH=$INSTALL_RPATH on staged files"
 for f in "$PAYLOAD"/*; do
   [ -f "$f" ] || continue          # skip the soname symlinks
@@ -510,6 +581,31 @@ else
     die "unresolved shared libraries in the staged payload"
   fi
   env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace"
+
+  # The check above cannot fail on the machine that built the binary: the build
+  # deps are installed, so every library resolves from /usr/lib whether or not
+  # it is in the payload. That is exactly how a tarball missing Boost shipped
+  # and then died on a server with the same OS and glibc as the runner.
+  #
+  # So assert the property that actually has to hold on the *target*: every
+  # dependency is either bundled beside the binary or part of the ABI floor the
+  # host is required to provide. Anything else is a library we are silently
+  # assuming the user has.
+  log "checking every dependency is bundled or on the ABI floor"
+  unbundled=""
+  while read -r soname _arrow libpath _rest; do
+    [ -n "${libpath:-}" ] || continue
+    printf '%s' "$soname" | grep -Eq "$ABI_FLOOR" && continue
+    [ -e "$PAYLOAD/$soname" ] && continue
+    unbundled="$unbundled $soname"
+  done <<EOF
+$(env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\//')
+EOF
+  if [ -n "$unbundled" ]; then
+    echo "unbundled third-party libraries:$unbundled" >&2
+    die "payload depends on libraries the target host may not have"
+  fi
+  log "all third-party dependencies are bundled"
 fi
 
 # The real relocatability check on both platforms: run the staged binary with

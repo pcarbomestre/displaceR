@@ -164,13 +164,35 @@ displace_doctor <- function(verbose = TRUE) {
         add("shared libraries", "info", "could not run ldd to check them.")
       }
     } else if (length(missing)) {
+      ## Two very different causes, and the advice for one is useless for the
+      ## other. A missing libc/libstdc++ really does mean the binary is too new
+      ## for this host. A missing Boost or GeographicLib does not -- those are
+      ## build dependencies that a bare server has no reason to have, and the
+      ## glibc advice sends the user chasing a version match that is already
+      ## correct. Split on the ABI floor and say the right thing for each.
+      floor_re <- "^(libc|libstdc\\+\\+|libgcc_s|libm|libpthread|libdl|librt|ld-linux)"
+      abi <- grep(floor_re, missing, value = TRUE)
+      third_party <- setdiff(missing, abi)
       add("shared libraries", "fail",
-          sprintf(paste0("%d unresolved: %s.\n",
-                         "      This usually means the binary was built on a newer ",
-                         "system than this one.\n",
-                         "      Rebuild on a host whose glibc is no newer than %s."),
-                  length(missing), paste(missing, collapse = ", "),
-                  if (is.na(hg)) "this host's" else hg))
+          paste0(
+            sprintf("%d unresolved: %s.\n", length(missing),
+                    paste(missing, collapse = ", ")),
+            if (length(abi)) sprintf(paste0(
+              "      %s belong to the C/C++ runtime, so this binary was built ",
+              "on a newer\n      system than this one. Rebuild on a host whose ",
+              "glibc is no newer than %s.\n"),
+              paste(abi, collapse = ", "),
+              if (is.na(hg)) "this host's" else hg),
+            if (length(third_party)) paste0(
+              "      ", paste(third_party, collapse = ", "),
+              " should have been bundled in the payload.\n",
+              "      Reinstall to pick up a newer build:\n",
+              "          uninstall_displace(displace_version()$installed_version)\n",
+              "          install_displace()\n",
+              "      If that does not help, the tarball predates dependency ",
+              "bundling; install\n      the matching system packages ",
+              "(libboost1.83, libgeographiclib26) or rebuild\n",
+              "      with tools/build-displace.sh.")))
     } else {
       add("shared libraries", "ok", "all resolved")
     }

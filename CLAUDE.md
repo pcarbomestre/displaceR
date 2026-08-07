@@ -167,8 +167,7 @@ cmake --build DISPLACE_GUI/Build --target displace
 
 ### Runtime payload
 
-Ship these four files; everything else is stock system libs (Boost,
-GeographicLib, sqlite3, libstdc++, libc):
+DISPLACE's own files:
 
 ```
 displace             (817 KB)
@@ -177,8 +176,37 @@ libformats.so        (233 KB)
 libmsqlitecpp.so.1
 ```
 
+**Plus every third-party dependency except the platform ABI floor** — on Ubuntu
+24.04 that is Boost (`program_options`, `filesystem`), GeographicLib and
+sqlite3, roughly 10 MB more.
+
+Treating those as "stock system libs" was wrong and shipped a broken tarball:
+they reach the build machine via `libboost-all-dev` / `libgeographiclib-dev`,
+which are **build** dependencies, so a bare compute server does not have them.
+The binary then dies at startup with `error while loading shared libraries:
+libboost_program_options.so.1.83.0` even when the OS and glibc match the builder
+exactly. Bundling is what keeps the "no root on the target" constraint true.
+
+The ABI floor — `libc`, `libstdc++`, `libgcc_s`, `libm`, the loader — is
+deliberately **never** bundled. Those are shared by every library in the
+process (R has already loaded `libstdc++` before `displace` runs), and symbol
+versioning is one-directional, so a bundled copy older than the host's breaks in
+ways a missing library does not. The glibc rule below is what handles them.
+
+`tools/build-displace.sh` derives the list from `ldd` rather than hardcoding it,
+so a new upstream dependency is bundled automatically, and asserts that nothing
+outside the floor is left unbundled. That assertion is the check that matters:
+plain `ldd` cannot fail on the machine that built the binary, because the build
+deps are installed there.
+
 Build with `RPATH=$ORIGIN` so the tarball is relocatable and needs no
-`LD_LIBRARY_PATH`.
+`LD_LIBRARY_PATH`. `$ORIGIN` also means the bundled copies win for `displace`
+only — nothing is installed system-wide and no other program's view of Boost
+changes.
+
+**macOS is not bundled.** Mach-O records an absolute install name in each
+dependent, so it needs `install_name_tool -change` rather than a copy. The macOS
+payload still relies on Homebrew.
 
 ### glibc / portability rule
 
@@ -289,7 +317,8 @@ Documented with column layouts in `docs/output_fileformats.md`, written to
 ### Phase 1 — Build pipeline
 GitHub Actions workflow, `workflow_dispatch` input for the upstream ref. Runs the
 recipe above, smoke-tests on the minitest dataset, `ldd`s the binary, bundles the
-four runtime files, publishes `displace-<ref>-linux-x86_64.tar.gz` + sha256.
+runtime payload (see above), publishes `displace-<ref>-linux-x86_64.tar.gz` +
+sha256.
 Get it green once against a pinned SHA before automating.
 
 ### Phase 2 — Binary distribution
