@@ -28,6 +28,11 @@ on:
         type: boolean
         required: false
         default: false
+      prerelease:
+        description: "Mark the release as a pre-release (beta)"
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -254,13 +259,21 @@ jobs:
           set -euo pipefail
           TAG="${{ inputs.release_tag }}"
           UPSTREAM_SHA="${{ steps.package.outputs.upstream_sha }}"
+          # Prepended to the notes only for a pre-release. Empty otherwise, which
+          # leaves a blank first line the renderer ignores.
+          BETA_BANNER=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            BETA_BANNER=$'> **Beta.** These binaries build and pass the minitest smoke test, but\n> have not been validated against a production case study. Pin an explicit\n> version in `install_displace()` rather than relying on the manifest\n> default if you need stability.\n'
+          fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             # GPL-2 section 3: the corresponding source must accompany the
             # binary. The upstream SHA plus tools/build-displace.sh at this
             # commit is exactly that, so it goes in the release notes.
             gh release create "$TAG" \
-              --title "DISPLACE binaries ($TAG)" \
+              ${{ inputs.prerelease && '--prerelease' || '' }} \
+              --title "DISPLACE binaries${{ inputs.prerelease && ' (beta)' || '' }} ($TAG)" \
               --notes "$(cat <<NOTES
+          ${BETA_BANNER}
           Headless DISPLACE simulator binaries built by \`.github/workflows/build-displace.yml\`.
 
           | | |
@@ -438,7 +451,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "${{ inputs.release_tag }}" \
+          TAG="${{ inputs.release_tag }}"
+          # With targets 'none' this job runs without the Linux job, so the
+          # release may not exist yet. Create it here rather than failing.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              ${{ inputs.prerelease && '--prerelease' || '' }} \
+              --title "DISPLACE binaries${{ inputs.prerelease && ' (beta)' || '' }} ($TAG)" \
+              --notes "Headless DISPLACE simulator binaries built by \`.github/workflows/build-displace.yml\` from upstream \`${{ inputs.upstream_ref }}\`. DISPLACE is GPL-2.0; see \`LICENSE.note\`."
+          fi
+          gh release upload "$TAG" \
             "${{ steps.package.outputs.name }}.tar.gz" \
             "${{ steps.package.outputs.name }}.tar.gz.sha256" \
             --clobber
