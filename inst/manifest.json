@@ -40,8 +40,36 @@
       }
     }
   },
-  "default": "1.6.6-7f2656fb",
+  "default": "1.6.6-7f2656fb-beta2",
   "versions": {
+    "1.6.6-7f2656fb-beta2": {
+      "upstream_sha": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
+      "upstream_ref": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
+      "displace_version": "1.6.6",
+      "displace_build": "0",
+      "released": "2026-08-07",
+      "note": [
+        "Same upstream commit as 1.6.6-7f2656fb. The difference is the payload:",
+        "this build bundles Boost, GeographicLib and sqlite3 alongside the",
+        "binary. 1.6.6-7f2656fb assumed those were present on the host and fails",
+        "at startup on a server without the -dev packages installed.",
+        "The macOS build is carried over unchanged -- bundling is Linux-only."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb-beta2/displace-7f2656fb7cd4-linux-x86_64-glibc2.39.tar.gz",
+          "sha256": "21060012107a85bc436ffa91a6d3cf39e425e9a4be74344aa72ee581fbf2b9b7",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7f2656fb/displace-7f2656fb7cd4-macos-arm64.tar.gz",
+          "sha256": "51f8176a35f563978a757060cc10f82cdcd3a271722a302f060f42b0d3330ac6",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
     "1.6.6-7f2656fb": {
       "upstream_sha": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
       "upstream_ref": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
