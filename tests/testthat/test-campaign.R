@@ -98,15 +98,40 @@ test_that("a campaign skips replicates that are already complete", {
     n = 2, steps = 1000, margin = 50,
     input_dir = "unused", input_name = "case", scenario = "baseline",
     output_dir = out,
-    map = function(i, nm, run_fn) {
-      launched <<- c(launched, nm)
-      run_fn()
+    map = function(thunks) {
+      launched <<- c(launched, names(thunks))
+      lapply(thunks, function(f) f())
     }
   ))
 
   expect_length(launched, 0L)
   expect_equal(camp$passes, 0L)
   expect_true(all(camp$status$complete))
+})
+
+test_that("map receives the whole batch at once, not one replicate at a time", {
+  ## This is what makes parallelism possible. The first version called map()
+  ## inside a for loop, so it blocked on each replicate in turn and no mapper --
+  ## furrr or otherwise -- could have run them concurrently.
+  out <- tempfile()
+  leaf <- file.path(out, "DISPLACE_outputs", "case", "baseline")
+  dir.create(leaf, recursive = TRUE)
+
+  batch_sizes <- integer(0)
+  suppressWarnings(suppressMessages(run_displace_campaign(
+    n = 5, steps = 1000, margin = 50, max_passes = 1,
+    input_dir = "unused", input_name = "case", scenario = "baseline",
+    output_dir = out,
+    map = function(thunks) {
+      batch_sizes <<- c(batch_sizes, length(thunks))
+      ## Names identify which replicate each thunk belongs to, which a parallel
+      ## mapper needs in order to report progress meaningfully.
+      expect_equal(names(thunks), sprintf("simu%d", 1:5))
+      vector("list", length(thunks))
+    }
+  )))
+
+  expect_equal(batch_sizes, 5L)   # one call carrying all five, not five calls
 })
 
 test_that("a campaign gives up rather than looping for ever", {
@@ -121,9 +146,9 @@ test_that("a campaign gives up rather than looping for ever", {
       n = 1, steps = 1000, margin = 50, max_passes = 3,
       input_dir = "unused", input_name = "case", scenario = "baseline",
       output_dir = out,
-      map = function(i, nm, run_fn) {
+      map = function(thunks) {
         attempts <<- attempts + 1L
-        NULL          # never produces output
+        vector("list", length(thunks))   # never produces output
       }
     )),
     "giving up after 3 passes"

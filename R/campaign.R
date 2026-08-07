@@ -194,9 +194,25 @@ check_displace_replicates <- function(output_path, sim_names, steps,
 #' @param max_passes Give up after this many passes. Guards against a
 #'   replicate that fails deterministically, which would otherwise loop for
 #'   ever.
-#' @param map Optional mapper for parallelism, as in
-#'   [run_displace_replicates()]. Note DISPLACE threads vessel movement
-#'   internally, so the load is the product of the two.
+#' @param map How to run a batch of replicates. Receives a named list of
+#'   zero-argument functions -- one per replicate still to run -- and must
+#'   return a list of their results, in the same order. The default runs them
+#'   one at a time with [lapply()]; pass `furrr::future_map` to run them
+#'   concurrently:
+#'
+#'   ```r
+#'   library(future); library(furrr)
+#'   plan(multisession, workers = 6)
+#'   run_displace_campaign(..., num_threads = 1,
+#'                         map = function(fs) future_map(fs, function(f) f()))
+#'   ```
+#'
+#'   This is where a long campaign's time actually goes. A 10-year replicate
+#'   occupies a single core for hours -- `--num_threads` parallelises only
+#'   vessel movement and measures at roughly 6% -- while replicates are fully
+#'   independent, so running them concurrently scales close to linearly. Set
+#'   `num_threads = 1` when doing so: otherwise the load is the product of the
+#'   two and oversubscribes the machine.
 #' @param quiet Suppress progress messages.
 #'
 #' @return A list with `runs` (named list of the last `displace_run` per
@@ -255,7 +271,11 @@ run_displace_campaign <- function(n,
   }
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  map <- map %||% function(i, sim_name, run_fn) run_fn()
+  ## Default: run the batch one at a time. lapply's contract -- a list of
+  ## results, in order, one per input -- is exactly what a parallel mapper such
+  ## as furrr::future_map provides, so swapping one for the other is the only
+  ## change needed to parallelise a campaign.
+  map <- map %||% function(thunks) lapply(thunks, function(f) f())
 
   ## Every replicate shares one output tree, as the upstream .bat does. That is
   ## what lets a campaign resume: replicates already complete on disk are
@@ -292,25 +312,37 @@ run_displace_campaign <- function(n,
            paste(utils::head(todo, 5), collapse = ", "))
     }
 
+    ## Build every replicate's thunk first, then hand the whole batch to `map`
+    ## in one call. Calling map() from inside a for loop -- which this used to
+    ## do -- blocks on each replicate in turn, so no mapper could parallelise
+    ## it however it was written. Since a 10-year replicate pegs a single core
+    ## for hours and replicates are independent, running them concurrently is
+    ## the only thing that meaningfully shortens a campaign.
+    thunks <- lapply(todo, function(nm) {
+      force(nm)
+      function() {
+        args <- c(dots, list(sim_name = nm, steps = steps,
+                             output_dir = output_dir))
+        if (is.null(args$echo)) args$echo <- FALSE
+        ## A replicate that errors must not abort the campaign: that is the
+        ## whole point of retrying. Record it and let the next pass decide.
+        tryCatch(do.call(run_displace, args),
+                 error = function(e) {
+                   warnf("replicate %s failed: %s", nm, conditionMessage(e))
+                   NULL
+                 })
+      }
+    })
+    names(thunks) <- todo
+
+    results <- map(thunks)
+    if (length(results) != length(todo)) {
+      stopf(paste0("map() returned %d result(s) for %d replicate(s); it must ",
+                   "return one element per thunk, in order."),
+            length(results), length(todo))
+    }
     for (i in seq_along(todo)) {
-      nm <- todo[[i]]
-      run_fn <- local({
-        nm_i <- nm
-        function() {
-          args <- c(dots, list(sim_name = nm_i, steps = steps,
-                               output_dir = output_dir))
-          if (is.null(args$echo)) args$echo <- FALSE
-          ## A replicate that errors must not abort the campaign: that is the
-          ## whole point of retrying. Record it and let the next pass decide.
-          tryCatch(do.call(run_displace, args),
-                   error = function(e) {
-                     warnf("replicate %s failed: %s", nm_i, conditionMessage(e))
-                     NULL
-                   })
-        }
-      })
-      r <- map(i, nm, run_fn)
-      if (!is.null(r)) runs[[nm]] <- r
+      if (!is.null(results[[i]])) runs[[todo[[i]]]] <- results[[i]]
     }
   }
 

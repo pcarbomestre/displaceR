@@ -40,9 +40,25 @@ temporary directory that disappears when R exits.}
 replicate that fails deterministically, which would otherwise loop for
 ever.}
 
-\item{map}{Optional mapper for parallelism, as in
-[run_displace_replicates()]. Note DISPLACE threads vessel movement
-internally, so the load is the product of the two.}
+\item{map}{How to run a batch of replicates. Receives a named list of
+  zero-argument functions -- one per replicate still to run -- and must
+  return a list of their results, in the same order. The default runs them
+  one at a time with [lapply()]; pass `furrr::future_map` to run them
+  concurrently:
+
+  ```r
+  library(future); library(furrr)
+  plan(multisession, workers = 6)
+  run_displace_campaign(..., num_threads = 1,
+                        map = function(fs) future_map(fs, function(f) f()))
+  ```
+
+  This is where a long campaign's time actually goes. A 10-year replicate
+  occupies a single core for hours -- `--num_threads` parallelises only
+  vessel movement and measures at roughly 6% -- while replicates are fully
+  independent, so running them concurrently scales close to linearly. Set
+  `num_threads = 1` when doing so: otherwise the load is the product of the
+  two and oversubscribes the machine.}
 
 \item{quiet}{Suppress progress messages.}
 }
