@@ -589,7 +589,13 @@ jobs:
           # dependencies (CGAL, GDAL, ...). Honouring it rebuilds all of those,
           # and the first attempt died on a 404 fetching GMP's build tools.
           # The headless simulator needs only what the vcpkg step installed.
+          # msqlitecpp installs its config straight into lib/cmake/ on Windows,
+          # not lib/cmake/msqlitecpp/, and CMake only searches the latter. Point
+          # at wherever it actually landed.
+          MSQLITECPP_DIR="$(dirname "$(find local -name msqlitecppConfig.cmake | head -1)")"
+          [ -n "$MSQLITECPP_DIR" ] || { echo "::error::msqlitecppConfig.cmake not installed"; exit 1; }
           cmake -S upstream -B upstream/build -A x64 \
+            -Dmsqlitecpp_DIR="$WS/$MSQLITECPP_DIR" \
             -DWITHOUT_GUI=On \
             -DSPARSEPP_ROOT="$WS/sparsepp" \
             -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
