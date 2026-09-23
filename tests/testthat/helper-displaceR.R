@@ -67,6 +67,11 @@ make_fake_input <- function(dir = tempfile(), input_name = "testcase",
   write_displace_graph(list(nodes = nodes, edges = edges), dir,
                        a_graph = a_graph,
                        code_area = rep(10L, nrow_coord))
+  for (layer in PER_NODE_LAYERS) {
+    writeLines(rep("0", nrow_coord),
+               file.path(dir, "graphsspe",
+                         sprintf("coord%d_with_%s.dat", a_graph, layer)))
+  }
 
   vess <- file.path(dir, paste0("vesselsspe_", input_name))
   for (kind in c("fgrounds", "harbours")) {

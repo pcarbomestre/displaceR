@@ -1,3 +1,35 @@
+# displaceR 0.1.0.9000
+
+## DISPLACE 1.8.0
+
+* Verified against upstream `v1.8.0` (`96eadecb`). 16 commits past `7f2656fb`;
+  no change to the CLI, the build system or the SQLite schema (`dbVersion` 4).
+  Every existing build patch still applies, and the golden-file tests pass
+  against a 1.8.0 binary.
+* Model behaviour did change: 1.7.0–1.8.0 fix N depletion in `do_catch()`, the
+  cpue multiplier's annual update, monthly area closures, times at sea, and TAC
+  logic that silently assumed a discard ban. Results are not comparable with
+  1.6.6, so the manifest default stays on 1.6.6 until switched deliberately.
+* New build patch `ices-optional`: 1.8.0 aborts at load when
+  `graphsspe/coord<N>_with_icesrectanglecode.dat` is missing, although upstream
+  treats the file as optional. The patch restores the zeros upstream already
+  prepares. It fires only on trees that have the new size check, so 1.6.6
+  builds are unchanged. See `docs/upstream-issues.md` 16.
+* `validate_displace_input()` now checks every per-node layer
+  (`coord<N>_with_<layer>.dat`): it must exist and hold at least `nrow_coord`
+  values, which 1.8.0 enforces at load time. A missing ICES-rectangle layer is a
+  warning, not an error.
+* 1.8.0 reads an optional `metiersspe_<name>/metier_catchrate_multiplier_fleetsce<N>.dat`
+  (defaults to 1.0 per metier when absent) and writes `cumsteaming` and
+  `timeatsea` in `loglike_*.dat` to one decimal. The `loglike` reader already
+  types those columns by inference, so no reader change was needed.
+
+## R 4.6
+
+* `R CMD check --as-cran` is clean on R 4.6.1 (0 errors, 0 warnings), and the
+  full test suite, golden tests included, passes against both simulator
+  versions.
+
 # displaceR 0.1.0
 
 First release. Implements Phases 1–4 of the plan in `CLAUDE.md`.

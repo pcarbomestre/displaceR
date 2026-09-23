@@ -116,6 +116,27 @@ install_displace(from = "displace-<sha>-<platform>.tar.gz")
 
 `displace_doctor()` reports which of these applies on your machine.
 
+#### Choosing a DISPLACE version
+
+Several DISPLACE versions can be installed side by side; each lives in its own
+directory under the cache, keyed by its label.
+
+```r
+displace_versions()                       # what the manifest can install
+install_displace()                        # the pinned default
+install_displace("1.8.0-96eadecb")        # a specific version, alongside it
+displace_installed()                      # what is on this machine
+
+# Pick one per run:
+run_displace(..., binary = displace_path("1.8.0-96eadecb"))
+```
+
+The default is pinned for reproducibility and moves only deliberately. Do not
+switch versions in the middle of a set of replicates: DISPLACE 1.7.0–1.8.0
+changed N depletion, the cpue multiplier, area closures and TAC logic, so
+results from 1.6.6 and 1.8.0 are not comparable. The label to cite is the
+upstream commit that `displace_version()` reports.
+
 `install_displace()` writes to `tools::R_user_dir("displaceR", "cache")`. Point
 `DISPLACER_CACHE` somewhere shared if several users on a server should share one
 copy.

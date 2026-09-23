@@ -447,6 +447,43 @@ Could not find a package configuration file provided by "boost_system"
 
 ---
 
+## 16. A missing ICES-rectangle file aborts the load — **new in 1.8.0**
+
+Verified at `v1.8.0` (`96eadecb`). Upstream plainly intends
+`graphsspe/coord<N>_with_icesrectanglecode.dat` to be optional —
+`commons/TextfileModelLoader.cpp` comments out the open error, pre-fills the
+vector with zeros and prints `Caution: cannot parse ... File does not exist` —
+but `fill_from_icesrectanglecode()` (`commons/myutils.cpp`) calls `clear()`
+before reading, so a missing file leaves the vector **empty**, not zeroed.
+
+- At `7f2656fb` (1.6.6) that empty vector is later read with `operator[]` —
+  out of bounds, undefined behaviour, but in practice silent.
+- `v1.8.0` adds a one-time size check over every `graph_point_*` vector, which
+  now throws before the simulation starts:
+
+```
+ERROR: graph_point_icesrectanglecode size 0 != expected 41
+Unhandled exception : One or more vectors have unexpected size (expected 41)
+```
+
+Reproduced by deleting `coord0_with_icesrectanglecode.dat` from minitest.
+Minitest's own graphs 1, 100 and 101 have no such file, and a case study outside
+the ICES area (the US west coast) has no reason to carry one.
+
+**How displaceR handles it:** patch `ices-optional` in
+`tools/build-displace.sh` skips the fill when the file did not open, so the
+zeros upstream already prepared are kept — the behaviour the loader's own
+message describes. It is guarded on the size check being present, so builds of
+1.6.6 are unchanged. `validate_displace_input()` also flags the file as missing,
+as a warning, so a user on an unpatched build learns why it will not start.
+
+The same size check makes every *other* per-node file (`_with_wind`, `_with_sst`,
+`_with_bathymetry`, ...) fatal if it has fewer than `nrow_coord` values. Those
+files were always required to exist; 1.8.0 now also requires them to be
+complete. `validate_displace_input()` checks their length.
+
+---
+
 # The ask that would make most of this moot
 
 Every issue above is downstream of one fact: **there are no official headless

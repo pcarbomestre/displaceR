@@ -282,6 +282,30 @@ if ! stdlib_has_random_shuffle; then
   PATCHES_APPLIED="${PATCHES_APPLIED}random-shuffle "
 fi
 
+# Patch 1d: a missing ICES-rectangle file aborts the load (upstream >= 1.8.0).
+#
+# coord<N>_with_icesrectanglecode.dat is meant to be optional: the loader
+# comments out its open-error, pre-fills the vector with zeros, and prints
+# "Caution: ... File does not exist". But fill_from_icesrectanglecode() clears
+# the vector before reading, so a missing file leaves it empty -- and 1.8.0 adds
+# a size check that then throws "graph_point_icesrectanglecode size 0 != expected
+# N". Any case study outside the ICES area (e.g. the US west coast) has no such
+# file and cannot start.
+#
+# Skip the fill when the file did not open, so the zeros upstream already
+# prepared are kept. Guarded on the size check being present, so builds of
+# commits before it (1.6.6 / 7f2656fb) stay byte-identical. See
+# docs/upstream-issues.md 16.
+LOADER="$WORKDIR/DISPLACE_GUI/commons/TextfileModelLoader.cpp"
+ICES_CALL='if (!fill_from_icesrectanglecode(icesrectanglecode_graph,'
+if grep -q 'graph_point_icesrectanglecode size' "$LOADER" 2>/dev/null &&
+   grep -qF "$ICES_CALL" "$LOADER"; then
+  log "patching TextfileModelLoader.cpp: ICES-rectangle file is optional again"
+  sed_i 's/if (!fill_from_icesrectanglecode(icesrectanglecode_graph,/if (!icesrectanglecode_graph.is_open() || !fill_from_icesrectanglecode(icesrectanglecode_graph,/' \
+      "$LOADER"
+  PATCHES_APPLIED="${PATCHES_APPLIED}ices-optional "
+fi
+
 # include/version.h hardcodes VERSION and is not derived from git tags, so two
 # different commits usually report the same banner. Record it as informational
 # only; the SHA above is the authoritative key.

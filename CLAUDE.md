@@ -37,6 +37,11 @@ document it as a known limitation.
 - Repo: https://github.com/frabas/DISPLACE_GUI (GPL-2.0) — **read-only, see above**
 - Verified against HEAD `7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de` (2026-08-05)
 - Binary self-reports as `version 1.6.6 build 0`
+- Also verified: tag `v1.8.0` = `96eadecb1980d6f9ad22571cd6f963cc05379815`
+  (2026-09-23), reports `1.8.0 build 0`. Builds with the existing patches plus
+  `ices-optional`; golden tests pass. Model behaviour differs from 1.6.6 (TAC,
+  N depletion, closures), so the manifest default stays on 1.6.6 until the
+  user switches it. See NEWS.md and `docs/upstream-issues.md` 16.
 
 ## Architecture (three layers, deliberately separate)
 

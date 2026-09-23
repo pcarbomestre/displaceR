@@ -72,6 +72,15 @@ write_stacked <- function(path, columns) {
   invisible(path)
 }
 
+## The per-node layers TextfileModelLoader reads as
+## graphsspe/coord<N>_with_<layer>.dat, one value per node. All are required
+## except icesrectanglecode.
+PER_NODE_LAYERS <- c(
+  "landscape", "wind", "sst", "salinity", "nitrogen", "phosphorus", "oxygen",
+  "dissolvedcarbon", "bathymetry", "shippingdensity", "siltfraction",
+  "icesrectanglecode", "benthos_total_biomass", "benthos_total_number"
+)
+
 graphsspe_file <- function(input_dir, a_graph, what) {
   file.path(input_dir, "graphsspe", switch(
     what,
