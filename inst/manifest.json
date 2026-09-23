@@ -64,7 +64,7 @@
         },
         "macos-arm64": {
           "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb/displace-96eadecb1980-macos-arm64.tar.gz",
-          "sha256": "e2b29c7068fd736d1b3e3a2e59d64e05098c678149c95ca98bf4f4c465edf9c6",
+          "sha256": "37c0cc0edc8f971e88cd1300cc312cb9abc5c7d978c672f12994993ca265c6fa",
           "arch": "arm64",
           "built_on": "macos-14"
         }
