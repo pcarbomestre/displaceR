@@ -209,9 +209,13 @@ Build with `RPATH=$ORIGIN` so the tarball is relocatable and needs no
 only — nothing is installed system-wide and no other program's view of Boost
 changes.
 
-**macOS is not bundled.** Mach-O records an absolute install name in each
-dependent, so it needs `install_name_tool -change` rather than a copy. The macOS
-payload still relies on Homebrew.
+**macOS is bundled too (since 1.8.0).** Relying on Homebrew broke: the 1.8.0
+payload built on CI against Boost 1.92 aborted on a Mac with Boost 1.90
+(`Symbol not found`), because Homebrew dylibs are unversioned. Section 4c of the
+build script copies every non-`/usr/lib`, non-`/System` dylib, rewrites references
+to `@rpath/<name>` with `install_name_tool`, re-signs ad hoc (arm64 kills
+invalidly signed code), and asserts nothing points outside the payload. The
+1.6.6 macOS assets predate this and still need a matching Homebrew Boost.
 
 ### glibc / portability rule
 

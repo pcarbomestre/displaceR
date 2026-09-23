@@ -532,11 +532,7 @@ done
 # other program's view of Boost changes. Matching is by SONAME, so a bundled
 # 1.83 and a system 1.74 are different libraries and coexist.
 #
-# macOS is deliberately not handled here. Mach-O records an absolute install
-# name in each dependent, so bundling there means rewriting paths with
-# install_name_tool -change, not just copying -- a different mechanism with its
-# own signing wrinkles. The macOS payload keeps relying on Homebrew until
-# someone actually needs otherwise.
+# macOS is handled in 4c below: same idea, different mechanism.
 # Leaf libraries only. Anything matching this is part of the ABI floor that the
 # whole process shares, and must come from the host. Defined outside the block
 # below because the verification step in section 5 applies the same rule.
@@ -569,6 +565,70 @@ EOF
   log "bundled $bundled third-party libraries"
 fi
 
+# ---------------------------------------------------------------------------
+# 4c. Bundle the third-party runtime libraries (macOS)
+# ---------------------------------------------------------------------------
+#
+# Relying on Homebrew at runtime broke in practice: the 1.8.0 payload was built
+# against CI's Boost 1.92, and on a Mac with Boost 1.90 it aborts at startup
+# with "Symbol not found: __ZN5boost15program_options6detail3argE". Homebrew's
+# dylibs are unversioned (libboost_program_options.dylib), so dyld happily
+# loads an incompatible one.
+#
+# Mach-O records each dependency by install name, often an absolute Homebrew
+# path, so bundling means copying the dylib AND rewriting every reference to
+# @rpath/<name>, which the LC_RPATH=@loader_path set below then resolves beside
+# the binary. Walked to a fixed point because Boost libraries depend on one
+# another. /usr/lib and /System are the macOS ABI floor (libc++, libSystem) and
+# always come from the host.
+if [ "$HOST_OS" = "Darwin" ]; then
+  log "bundling third-party runtime libraries"
+  BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+  # Resolve an @rpath/<name> reference against Homebrew's lib dirs. Keg-only
+  # formulae (sqlite) are absent from $BREW_PREFIX/lib, hence the opt/ glob.
+  find_brew_lib() {
+    local cand
+    for cand in "$BREW_PREFIX/lib/$1" "$BREW_PREFIX"/opt/*/lib/"$1"; do
+      [ -f "$cand" ] && { echo "$cand"; return 0; }
+    done
+    return 1
+  }
+  bundled=0
+  changed=1
+  while [ "$changed" -eq 1 ]; do
+    changed=0
+    for f in "$PAYLOAD"/*; do
+      [ -f "$f" ] && [ ! -L "$f" ] || continue
+      file "$f" 2>/dev/null | grep -q 'Mach-O' || continue
+      self_id="$(otool -D "$f" 2>/dev/null | sed -n '2p')"
+      for dep in $(otool -L "$f" | tail -n +2 | awk '{print $1}'); do
+        [ "$dep" = "$self_id" ] && continue
+        case "$dep" in
+          /usr/lib/*|/System/*|@loader_path/*|@executable_path/*) continue ;;
+        esac
+        name="$(basename "$dep")"
+        if [ ! -e "$PAYLOAD/$name" ]; then
+          case "$dep" in
+            @rpath/*) src="$(find_brew_lib "$name")" \
+                        || die "cannot locate $dep (needed by $(basename "$f"))" ;;
+            *)        src="$dep" ;;
+          esac
+          cp -L "$src" "$PAYLOAD/$name"
+          chmod u+w "$PAYLOAD/$name"
+          install_name_tool -id "@rpath/$name" "$PAYLOAD/$name" 2>/dev/null
+          log "  bundled $name"
+          bundled=$((bundled + 1))
+          changed=1
+        fi
+        if [ "$dep" != "@rpath/$name" ]; then
+          install_name_tool -change "$dep" "@rpath/$name" "$f" 2>/dev/null
+        fi
+      done
+    done
+  done
+  log "bundled $bundled third-party libraries"
+fi
+
 log "setting RPATH=$INSTALL_RPATH on staged files"
 for f in "$PAYLOAD"/*; do
   [ -f "$f" ] || continue          # skip the soname symlinks
@@ -598,6 +658,29 @@ if [ "$HOST_OS" = "Darwin" ]; then
   # really answered by running the thing, which the smoke test below does.
   log "verifying with otool -L"
   otool -L "$PAYLOAD/displace"
+
+  # install_name_tool invalidates the signature, and Apple Silicon kills an
+  # arm64 process whose code signature is invalid. Re-sign ad hoc.
+  for f in "$PAYLOAD"/*; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    file "$f" 2>/dev/null | grep -q 'Mach-O' || continue
+    codesign --force --sign - "$f" 2>/dev/null || die "codesign failed on $f"
+  done
+
+  # Same reasoning as the Linux assertion: running --help on the build machine
+  # cannot fail, because Homebrew is installed here. What must hold on the
+  # target is that nothing still points outside the payload and the ABI floor.
+  log "checking every dependency is bundled or on the ABI floor"
+  unbundled="$(for f in "$PAYLOAD"/*; do
+      [ -f "$f" ] && [ ! -L "$f" ] || continue
+      file "$f" 2>/dev/null | grep -q 'Mach-O' || continue
+      otool -L "$f" | tail -n +2 | awk '{print $1}'
+    done | grep -vE '^(/usr/lib/|/System/|@rpath/|@loader_path/|@executable_path/)' | sort -u || true)"
+  if [ -n "$unbundled" ]; then
+    echo "unbundled third-party libraries: $unbundled" >&2
+    die "payload depends on libraries the target host may not have"
+  fi
+  log "all third-party dependencies are bundled"
 else
   log "verifying with ldd (LD_LIBRARY_PATH unset)"
   if env -u LD_LIBRARY_PATH ldd "$PAYLOAD/displace" | grep -q 'not found'; then

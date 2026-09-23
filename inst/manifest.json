@@ -42,6 +42,34 @@
   },
   "default": "1.6.6-7f2656fb-beta2",
   "versions": {
+    "1.8.0-96eadecb": {
+      "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
+      "upstream_ref": "v1.8.0",
+      "displace_version": "1.8.0",
+      "displace_build": "0",
+      "released": "2026-09-23",
+      "note": [
+        "Upstream tag v1.8.0. Model behaviour differs from 1.6.6 (N depletion,",
+        "cpue multiplier, area closures, TAC logic), so results are not",
+        "comparable across the two. Built with the ices-optional patch: a",
+        "missing coord<N>_with_icesrectanglecode.dat no longer aborts the load.",
+        "Not the default; opt in with install_displace(\"1.8.0-96eadecb\")."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb/displace-96eadecb1980-linux-x86_64-glibc2.39.tar.gz",
+          "sha256": "2a3cd0c6533cf86a4a2b955c5f5b72b47650087c317c166c88cb25e19ed81af8",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb/displace-96eadecb1980-macos-arm64.tar.gz",
+          "sha256": "e2b29c7068fd736d1b3e3a2e59d64e05098c678149c95ca98bf4f4c465edf9c6",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
     "1.6.6-7f2656fb-beta2": {
       "upstream_sha": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
       "upstream_ref": "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de",
