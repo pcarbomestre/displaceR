@@ -528,6 +528,17 @@ jobs:
           echo "BUILD_PATCHES=${PATCHES% }" >> "$GITHUB_ENV"
           echo "applied: ${PATCHES:-none}"
 
+      # vcpkg compiles Boost from source, ~25 minutes. Its binary cache
+      # (one zip per built package) is restored here and saved straight after
+      # the install, so a later step failing does not throw the work away.
+      - name: Restore the vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\vcpkg\archives
+          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/build-displace.yml') }}
+          restore-keys: vcpkg-x64-windows-
+
       - name: Install dependencies with vcpkg
         run: |
           set -euo pipefail
@@ -536,6 +547,13 @@ jobs:
             boost-program-options boost-log boost-test boost-geometry \
             boost-interprocess sqlite3 geographiclib
           echo "CMAKE_TOOLCHAIN=$(cygpath -m "$VCPKG_INSTALLATION_ROOT")/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Save the vcpkg binary cache
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\vcpkg\archives
+          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/build-displace.yml') }}
 
       - name: Build msqlitecpp
         run: |
