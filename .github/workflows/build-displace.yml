@@ -694,7 +694,7 @@ jobs:
           CDB="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
           if [ -x "$CDB" ]; then
             rm -rf "$RUNNER_TEMP/out-dbg"; mkdir -p "$RUNNER_TEMP/out-dbg"
-            MSYS_NO_PATHCONV=1 "$CDB" -g -G -o -y "$(cygpath -w "$PWD")" \
+            MSYS_NO_PATHCONV=1 "$CDB" -G -o -y "$(cygpath -w "$PWD")" \
               -c "sxe -c \"kP 25; gc\" eh; g; .lines -e; kP 40; q" \
               ./displace.exe -f fake -F baseline -a "$IN" \
               -O "$(cygpath -m "$RUNNER_TEMP/out-dbg")" -s dbg -i 50 -V 0 \
