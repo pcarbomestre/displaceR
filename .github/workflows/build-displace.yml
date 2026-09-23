@@ -583,8 +583,10 @@ jobs:
           # msqlitecpp's exported target carries no include directories
           # (docs/upstream-issues.md 2), hence the explicit -I. Dash-style,
           # not /I: Git Bash rewrites anything that looks like a Unix path, and
-          # turned /EHsc into "C:/Program Files/Git/EHsc". CMake already adds
-          # /EHsc for MSVC.
+          # turned /EHsc into "C:/Program Files/Git/EHsc". Setting CMAKE_CXX_FLAGS
+          # REPLACES CMake's MSVC defaults, so they are restated here: without
+          # -EHsc exceptions are off, Boost defines BOOST_NO_EXCEPTIONS, and the
+          # link fails on an unresolved boost::throw_exception.
           # _HAS_AUTO_PTR_ETC=1: vcpkg's Boost 1.92 requires C++17, which drops
           # std::random_shuffle. This restores MSVC's own implementation -- the
           # one upstream's Windows installer uses at C++14 -- so shuffles match
@@ -606,7 +608,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
             -DVCPKG_MANIFEST_MODE=OFF \
             -DCMAKE_PREFIX_PATH="$WS/local" \
-            -DCMAKE_CXX_FLAGS="-I$WS/local/include -D_HAS_AUTO_PTR_ETC=1" \
+            -DCMAKE_CXX_FLAGS="-DWIN32 -D_WINDOWS -GR -EHsc -I$WS/local/include -D_HAS_AUTO_PTR_ETC=1" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build upstream/build --config Release --target displace --parallel
 
