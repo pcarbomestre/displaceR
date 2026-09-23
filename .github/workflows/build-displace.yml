@@ -563,7 +563,10 @@ jobs:
         run: |
           set -euo pipefail
           # msqlitecpp's exported target carries no include directories
-          # (docs/upstream-issues.md 2), hence the explicit /I.
+          # (docs/upstream-issues.md 2), hence the explicit -I. Dash-style,
+          # not /I: Git Bash rewrites anything that looks like a Unix path, and
+          # turned /EHsc into "C:/Program Files/Git/EHsc". CMake already adds
+          # /EHsc for MSVC.
           # VCPKG_MANIFEST_MODE=OFF: upstream ships a vcpkg.json listing its GUI
           # dependencies (CGAL, GDAL, ...). Honouring it rebuilds all of those,
           # and the first attempt died on a 404 fetching GMP's build tools.
@@ -574,7 +577,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
             -DVCPKG_MANIFEST_MODE=OFF \
             -DCMAKE_PREFIX_PATH="$WS/local" \
-            -DCMAKE_CXX_FLAGS="/EHsc /I$WS/local/include" \
+            -DCMAKE_CXX_FLAGS="-I$WS/local/include" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build upstream/build --config Release --target displace --parallel
 
