@@ -123,12 +123,12 @@ directory under the cache, keyed by its label.
 
 ```r
 displace_versions()                       # what the manifest can install
-install_displace()                        # the pinned default
-install_displace("1.8.0-96eadecb")        # a specific version, alongside it
+install_displace()                        # the pinned default (1.8.0)
+install_displace("1.6.6-7f2656fb-beta2")  # the previous version
 displace_installed()                      # what is on this machine
 
 # Pick one per run:
-run_displace(..., binary = displace_path("1.8.0-96eadecb"))
+run_displace(..., binary = displace_path("1.6.6-7f2656fb-beta2"))
 ```
 
 The default is pinned for reproducibility and moves only deliberately. Do not

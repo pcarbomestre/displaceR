@@ -40,8 +40,9 @@ document it as a known limitation.
 - Also verified: tag `v1.8.0` = `96eadecb1980d6f9ad22571cd6f963cc05379815`
   (2026-09-23), reports `1.8.0 build 0`. Builds with the existing patches plus
   `ices-optional`; golden tests pass. Model behaviour differs from 1.6.6 (TAC,
-  N depletion, closures), so the manifest default stays on 1.6.6 until the
-  user switches it. See NEWS.md and `docs/upstream-issues.md` 16.
+  N depletion, closures), and the user made 1.8.0 the manifest default
+  (2026-09-23). Upstream 1.6.6 was never tagged: `7f2656fb` = `v1.6.5` + the
+  version.h bump `8cda73cc` + an HPC compile fix. See NEWS.md and `docs/upstream-issues.md` 16.
 
 ## Architecture (three layers, deliberately separate)
 

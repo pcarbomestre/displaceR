@@ -9,7 +9,8 @@
 * Model behaviour did change: 1.7.0–1.8.0 fix N depletion in `do_catch()`, the
   cpue multiplier's annual update, monthly area closures, times at sea, and TAC
   logic that silently assumed a discard ban. Results are not comparable with
-  1.6.6, so the manifest default stays on 1.6.6 until switched deliberately.
+  1.6.6. 1.8.0 is now the manifest default; `install_displace("1.6.6-7f2656fb-beta2")`
+  still installs the old version, and existing installs are left alone.
 * The macOS payload now bundles Boost, GeographicLib and sqlite like Linux
   does. The first 1.8.0 macOS build, linked against CI's Homebrew Boost 1.92,
   aborted at startup on a Mac with Boost 1.90.
