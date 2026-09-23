@@ -609,6 +609,9 @@ jobs:
             -DVCPKG_MANIFEST_MODE=OFF \
             -DCMAKE_PREFIX_PATH="$WS/local" \
             -DCMAKE_CXX_FLAGS="-DWIN32 -D_WINDOWS -GR -EHsc -I$WS/local/include -D_HAS_AUTO_PTR_ETC=1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-DEBUG -OPT:REF -OPT:ICF" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-DEBUG -OPT:REF -OPT:ICF" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -Ob2 -DNDEBUG -Zi" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build upstream/build --config Release --target displace --parallel
 
@@ -674,6 +677,41 @@ jobs:
             echo "::error::the run did not reach its step horizon"
             exit 1
           fi
+
+      - name: Diagnose a failed smoke test
+        # Only runs when the smoke test failed. The build carries PDBs (-Zi and
+        # -DEBUG above, same optimisation level), so the debugger can name the
+        # crashing frames. Also retries with SQLite output off, which separates
+        # "the simulator is broken" from "the SQLite layer is broken".
+        if: steps.smoke.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/relocated"
+          find "$GITHUB_WORKSPACE/upstream/build" -name '*.pdb' -path '*Release*' -exec cp {} . \; 2>/dev/null || true
+          echo "--- PDBs: $(ls *.pdb 2>/dev/null | tr '\n' ' ')"
+          IN="$(cygpath -m "$RUNNER_TEMP/minitest")"
+          CDB="/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe"
+          if [ -x "$CDB" ]; then
+            rm -rf "$RUNNER_TEMP/out-dbg"; mkdir -p "$RUNNER_TEMP/out-dbg"
+            MSYS_NO_PATHCONV=1 "$CDB" -g -G -o -y "$(cygpath -w "$PWD")" \
+              -c ".lines -e; .ecxr; kP 40; q" \
+              ./displace.exe -f fake -F baseline -a "$IN" \
+              -O "$(cygpath -m "$RUNNER_TEMP/out-dbg")" -s dbg -i 50 -V 0 \
+              --disable-crash-handler > "$RUNNER_TEMP/cdb.log" 2>&1
+            echo "--- debugger: exception and stack ---"
+            grep -nE "Access violation|exception|code [0-9a-f]{8}|^[0-9a-f]{2} [0-9a-f]{8}|![A-Za-z_]" "$RUNNER_TEMP/cdb.log" | tail -60
+          else
+            echo "cdb not found at $CDB"
+          fi
+          echo "--- retry with --disable-sqlite ---"
+          rm -rf "$RUNNER_TEMP/out-nosql"; mkdir -p "$RUNNER_TEMP/out-nosql"
+          ./displace.exe -f fake -F baseline -a "$IN" \
+            -O "$(cygpath -m "$RUNNER_TEMP/out-nosql")" -s nosql -i 50 -V 0 \
+            --disable-crash-handler --disable-sqlite > "$RUNNER_TEMP/nosql.log" 2>&1
+          echo "exit status: $?"
+          tail -5 "$RUNNER_TEMP/nosql.log"
+          echo "text outputs: $(find "$RUNNER_TEMP/out-nosql" -type f | wc -l)"
 
       - name: Package
         id: package
