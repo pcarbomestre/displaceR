@@ -25,7 +25,7 @@ on:
       upstream_ref:
         description: "Upstream DISPLACE_GUI ref to build both sides from"
         required: true
-        default: "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de"
+        default: "96eadecb1980d6f9ad22571cd6f963cc05379815"
       steps:
         description: "Number of simulation steps"
         required: false
