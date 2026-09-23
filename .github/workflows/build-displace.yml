@@ -585,6 +585,11 @@ jobs:
           # not /I: Git Bash rewrites anything that looks like a Unix path, and
           # turned /EHsc into "C:/Program Files/Git/EHsc". CMake already adds
           # /EHsc for MSVC.
+          # _HAS_AUTO_PTR_ETC=1: vcpkg's Boost 1.92 requires C++17, which drops
+          # std::random_shuffle. This restores MSVC's own implementation -- the
+          # one upstream's Windows installer uses at C++14 -- so shuffles match
+          # upstream's Windows binary. (macOS uses a libstdc++-faithful shim
+          # instead; see docs/upstream-issues.md 14.)
           # VCPKG_MANIFEST_MODE=OFF: upstream ships a vcpkg.json listing its GUI
           # dependencies (CGAL, GDAL, ...). Honouring it rebuilds all of those,
           # and the first attempt died on a 404 fetching GMP's build tools.
@@ -601,7 +606,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
             -DVCPKG_MANIFEST_MODE=OFF \
             -DCMAKE_PREFIX_PATH="$WS/local" \
-            -DCMAKE_CXX_FLAGS="-I$WS/local/include" \
+            -DCMAKE_CXX_FLAGS="-I$WS/local/include -D_HAS_AUTO_PTR_ETC=1" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build upstream/build --config Release --target displace --parallel
 
