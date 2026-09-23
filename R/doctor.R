@@ -56,8 +56,10 @@ displace_doctor <- function(verbose = TRUE) {
     if (identical(sysname, "Linux")) {
       ## Linux builds are glibc-keyed; any of them is a candidate, and
       ## select_build() decides which. Treat "some Linux build exists" as
-      ## available rather than re-running the glibc comparison here.
-      any(!grepl("^(macos|windows)-", builds))
+      ## available rather than re-running the glibc comparison here. Match the
+      ## glibc shape ("2.39") rather than "not macOS/Windows", or an unknown
+      ## key would count as a Linux build.
+      any(grepl("^[0-9]+\\.[0-9]+$", builds))
     } else {
       keys <- host_build_keys()
       length(keys) && any(keys %in% builds)
