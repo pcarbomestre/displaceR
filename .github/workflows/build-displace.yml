@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream DISPLACE_GUI ref (tag, branch or commit SHA)"
+        description: "Upstream DISPLACE_GUI ref (tag, branch or commit SHA). Default: v1.8.0"
         required: true
-        default: "7f2656fb7cd4180a2c74a8e3fe4b82400fd4a0de"
+        default: "96eadecb1980d6f9ad22571cd6f963cc05379815"
       release_tag:
         description: "Release tag to publish under. Leave empty to build without publishing."
         required: false
@@ -25,6 +25,11 @@ on:
         default: "both"
       build_macos:
         description: "Also build the macOS (Apple Silicon) binary"
+        type: boolean
+        required: false
+        default: false
+      build_windows:
+        description: "Also build the Windows (x86_64) binary"
         type: boolean
         required: false
         default: false
@@ -463,4 +468,231 @@ jobs:
           gh release upload "$TAG" \
             "${{ steps.package.outputs.name }}.tar.gz" \
             "${{ steps.package.outputs.name }}.tar.gz.sha256" \
+            --clobber
+
+  # ---------------------------------------------------------------------------
+  # Windows
+  # ---------------------------------------------------------------------------
+  #
+  # A separate job, not tools/build-displace.sh: almost nothing is shared.
+  # Dependencies come from vcpkg, the compiler is MSVC, there is no ELF/Mach-O
+  # to patch, and Windows resolves DLLs from the directory holding the .exe, so
+  # the payload needs no RPATH at all.
+  #
+  # Upstream builds its own Windows installer with MSVC at C++14, where
+  # std::random_shuffle is still legal, so neither the cxx17 patch nor the
+  # random_shuffle shim is applied here. The patches that ARE needed are
+  # applied below with the same guards as in tools/build-displace.sh -- keep
+  # the two in sync.
+  #
+  # Results follow the same seed as other Windows builds, not as Linux: MSVC's
+  # rand() is a different generator from glibc's.
+  build-windows:
+    if: inputs.build_windows
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out displaceR
+        uses: actions/checkout@v4
+
+      - name: Check out sources
+        run: |
+          set -euo pipefail
+          git clone https://github.com/frabas/DISPLACE_GUI.git upstream
+          git -C upstream fetch --tags origin
+          git -C upstream checkout --detach "${{ inputs.upstream_ref }}"
+          echo "UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_ENV"
+          git clone --depth 1 https://github.com/greg7mdp/sparsepp.git sparsepp
+          git clone --depth 1 https://github.com/studiofuga/mSqliteCpp.git mSqliteCpp
+          # CMake wants D:/a/... paths, not the /d/a/... that Git Bash uses.
+          echo "WS=$(cygpath -m "$PWD")" >> "$GITHUB_ENV"
+
+      - name: Apply build patches
+        # Same guards as tools/build-displace.sh patches 1bb (gdal-optional)
+        # and 1d (ices-optional).
+        run: |
+          set -euo pipefail
+          PATCHES=""
+          if grep -q 'find_package(GDAL REQUIRED 1.11)' upstream/cmake/dependencies.cmake; then
+            sed -i 's/find_package(GDAL REQUIRED 1.11)/find_package(GDAL QUIET)/' upstream/cmake/dependencies.cmake
+            PATCHES="${PATCHES}gdal-optional "
+          fi
+          LOADER=upstream/commons/TextfileModelLoader.cpp
+          if grep -q 'graph_point_icesrectanglecode size' "$LOADER" &&
+             grep -qF 'if (!fill_from_icesrectanglecode(icesrectanglecode_graph,' "$LOADER"; then
+            sed -i 's/if (!fill_from_icesrectanglecode(icesrectanglecode_graph,/if (!icesrectanglecode_graph.is_open() || !fill_from_icesrectanglecode(icesrectanglecode_graph,/' "$LOADER"
+            PATCHES="${PATCHES}ices-optional "
+          fi
+          echo "BUILD_PATCHES=${PATCHES% }" >> "$GITHUB_ENV"
+          echo "applied: ${PATCHES:-none}"
+
+      - name: Install dependencies with vcpkg
+        run: |
+          set -euo pipefail
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install --triplet x64-windows \
+            boost-date-time boost-filesystem boost-system boost-thread \
+            boost-program-options boost-log boost-test boost-geometry \
+            boost-interprocess sqlite3 geographiclib
+          echo "CMAKE_TOOLCHAIN=$(cygpath -m "$VCPKG_INSTALLATION_ROOT")/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Build msqlitecpp
+        run: |
+          set -euo pipefail
+          # Same missing find_package(SQLite3) as everywhere else; see
+          # docs/upstream-issues.md 13.
+          cat > sqlite-shim.cmake <<'SHIM'
+          find_package(SQLite3 REQUIRED)
+          if (NOT TARGET SQLite::SQLite3)
+              add_library(SQLite::SQLite3 UNKNOWN IMPORTED)
+              set_target_properties(SQLite::SQLite3 PROPERTIES
+                  IMPORTED_LOCATION "${SQLite3_LIBRARY}"
+                  INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIR}")
+          endif()
+          SHIM
+          cmake -S mSqliteCpp -B mSqliteCpp/build -A x64 \
+            -DENABLE_TEST=Off -DENABLE_PROFILER=Off \
+            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_PROJECT_INCLUDE="$WS/sqlite-shim.cmake" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_INSTALL_PREFIX="$WS/local"
+          cmake --build mSqliteCpp/build --config Release --target install
+
+      - name: Build the headless simulator
+        run: |
+          set -euo pipefail
+          # msqlitecpp's exported target carries no include directories
+          # (docs/upstream-issues.md 2), hence the explicit /I.
+          cmake -S upstream -B upstream/build -A x64 \
+            -DWITHOUT_GUI=On \
+            -DSPARSEPP_ROOT="$WS/sparsepp" \
+            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_PREFIX_PATH="$WS/local" \
+            -DCMAKE_CXX_FLAGS="/EHsc /I$WS/local/include" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build upstream/build --config Release --target displace --parallel
+
+      - name: Stage the payload
+        id: stage
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          find upstream/build -name 'displace.exe' -path '*Release*' -exec cp {} payload/ \;
+          [ -f payload/displace.exe ] || find upstream/build -name 'displace.exe' -exec cp {} payload/ \;
+          find upstream/build -name '*.dll' -path '*Release*' -exec cp {} payload/ \;
+          find local -name '*.dll' -exec cp {} payload/ \;
+          cp "$VCPKG_INSTALLATION_ROOT"/installed/x64-windows/bin/*.dll payload/
+          # The MSVC runtime is not guaranteed on a bare Windows machine (R for
+          # Windows is built with mingw and does not ship it). App-local
+          # deployment of these DLLs is what Microsoft's redist terms allow.
+          for dll in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            cp "/c/Windows/System32/$dll" payload/
+          done
+          cat > payload/build-info.json <<JSON
+          {
+            "upstream_ref": "${{ inputs.upstream_ref }}",
+            "upstream_sha": "${UPSTREAM_SHA}",
+            "displace_version": "$(sed -n 's/^#define VERSION "\(.*\)"$/\1/p' upstream/include/version.h | head -1)",
+            "built_on": "windows-2022",
+            "arch": "x86_64",
+            "build_patches": "${BUILD_PATCHES}"
+          }
+          JSON
+          ls -la payload/
+          test -f payload/displace.exe || { echo "::error::no displace.exe produced"; exit 1; }
+          echo "name=displace-${UPSTREAM_SHA:0:12}-windows-x86_64" >> "$GITHUB_OUTPUT"
+
+      - name: Verify it runs from a clean directory
+        run: |
+          set -euo pipefail
+          cp -r payload "$RUNNER_TEMP/relocated"
+          cd "$RUNNER_TEMP/relocated"
+          ./displace.exe --help | head -5
+
+      - name: Smoke test against DISPLACE_input_minitest
+        id: smoke
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git clone --depth 1 https://github.com/frabas/DISPLACE_input_minitest.git "$RUNNER_TEMP/minitest" || exit 1
+          mkdir -p "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/relocated"
+          set +e
+          ./displace.exe -f fake -F baseline \
+            -a "$(cygpath -m "$RUNNER_TEMP/minitest")" -O "$(cygpath -m "$RUNNER_TEMP/out")" \
+            -s smoke -i 50 -V 0 --disable-crash-handler > "$RUNNER_TEMP/smoke.log" 2>&1
+          RC=$?
+          set -e
+          tail -20 "$RUNNER_TEMP/smoke.log"
+          echo "exit status: $RC"
+          # As on Linux and macOS, the database is the evidence, not the status.
+          DB="$RUNNER_TEMP/out/DISPLACE_outputs/fake/baseline/fake_smoke_out.db"
+          test -f "$DB" || { echo "::error::no output database at $DB"; exit 1; }
+          LAST="$(python -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute(\"SELECT Value FROM Metadata WHERE Key='lastTStep'\").fetchone()[0])" "$(cygpath -m "$DB")")"
+          echo "lastTStep=$LAST (requested 50 steps)"
+          if [ -z "$LAST" ] || [ "$LAST" -lt 48 ]; then
+            echo "::error::the run did not reach its step horizon"
+            exit 1
+          fi
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.stage.outputs.name }}"
+          # tar.gz, not zip: install_displace() unpacks with utils::untar().
+          tar -czf "${NAME}.tar.gz" -C payload .
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          echo "sha256=$(cut -d' ' -f1 "${NAME}.tar.gz.sha256")" >> "$GITHUB_OUTPUT"
+          cat "${NAME}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.stage.outputs.name }}
+          path: |
+            ${{ steps.stage.outputs.name }}.tar.gz
+            ${{ steps.stage.outputs.name }}.tar.gz.sha256
+            payload/build-info.json
+
+      - name: Write manifest entry to the step summary
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG:-<tag>}"
+          {
+            echo '### Windows manifest entry'
+            echo
+            echo '```json'
+            cat <<JSON
+          "windows-x86_64": {
+            "url": "${BASE}/${{ steps.stage.outputs.name }}.tar.gz",
+            "sha256": "${{ steps.package.outputs.sha256 }}",
+            "arch": "x86_64",
+            "built_on": "windows-2022"
+          }
+          JSON
+            echo '```'
+            echo
+            echo "smoke test: ${{ steps.smoke.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release asset
+        # Never publish a binary whose smoke test did not pass.
+        if: inputs.release_tag != '' && steps.smoke.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              ${{ inputs.prerelease && '--prerelease' || '' }} \
+              --title "DISPLACE binaries${{ inputs.prerelease && ' (beta)' || '' }} ($TAG)" \
+              --notes "Headless DISPLACE simulator binaries built by \`.github/workflows/build-displace.yml\` from upstream \`${{ inputs.upstream_ref }}\`. DISPLACE is GPL-2.0; see \`LICENSE.note\`."
+          fi
+          gh release upload "$TAG" \
+            "${{ steps.stage.outputs.name }}.tar.gz" \
+            "${{ steps.stage.outputs.name }}.tar.gz.sha256" \
             --clobber
