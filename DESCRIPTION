@@ -1,6 +1,6 @@
 Package: displaceR
 Title: Run the 'DISPLACE' Fisheries Simulator from R
-Version: 0.1.0
+Version: 0.1.0.9000
 Authors@R: c(
     person("Pol", "Carbo Mestre", email = "polcarbo@gmail.com",
            role = c("aut", "cre"),

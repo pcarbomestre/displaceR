@@ -67,6 +67,37 @@ test_that("a graph inconsistent with the scenario's nrow_coord fails validation"
   expect_match(paste(v$errors, collapse = "\n"), "nrow_coord")
 })
 
+test_that("a short per-node layer fails validation", {
+  ## DISPLACE 1.8.0 checks every graph_point_* vector against nrow_coord and
+  ## throws on a mismatch.
+  fx <- make_fake_input(nrow_coord = 5L)
+  writeLines(rep("0", 4L), file.path(fx$dir, "graphsspe", "coord1_with_sst.dat"))
+
+  v <- validate_displace_input(fx$dir, fx$input_name)
+  expect_false(v$ok)
+  expect_match(paste(v$errors, collapse = "\n"), "coord1_with_sst.dat holds 4 values")
+})
+
+test_that("a missing required per-node layer fails validation", {
+  fx <- make_fake_input()
+  file.remove(file.path(fx$dir, "graphsspe", "coord1_with_bathymetry.dat"))
+
+  v <- validate_displace_input(fx$dir, fx$input_name)
+  expect_false(v$ok)
+  expect_match(paste(v$errors, collapse = "\n"), "coord1_with_bathymetry.dat")
+})
+
+test_that("a missing ICES rectangle layer only warns", {
+  ## Optional upstream, and made optional again on 1.8.0 by the ices-optional
+  ## build patch -- see docs/upstream-issues.md 16.
+  fx <- make_fake_input()
+  file.remove(file.path(fx$dir, "graphsspe", "coord1_with_icesrectanglecode.dat"))
+
+  v <- validate_displace_input(fx$dir, fx$input_name)
+  expect_true(v$ok)
+  expect_match(paste(v$warnings, collapse = "\n"), "icesrectanglecode")
+})
+
 test_that("a missing scenario lists the ones that do exist", {
   fx <- make_fake_input()
   v <- validate_displace_input(fx$dir, fx$input_name, scenario = "closure")

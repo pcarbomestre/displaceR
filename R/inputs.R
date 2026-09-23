@@ -74,6 +74,9 @@ create_displace_input <- function(input_dir, input_name, a_graph = 1L,
 #' * the scenario file parses and names a graph;
 #' * `graphsspe/coord<N>.dat` and `graph<N>.dat` exist and have a line count
 #'   consistent with the scenario's `nrow_coord` / `nrow_graph`;
+#' * every per-node layer `graphsspe/coord<N>_with_<layer>.dat` exists and holds
+#'   at least `nrow_coord` values -- DISPLACE 1.8.0 aborts otherwise. The ICES
+#'   rectangle layer is optional and only warned about;
 #' * all four quarters of `vesselsspe_fgrounds_quarter*.dat` and
 #'   `vesselsspe_harbours_quarter*.dat` exist -- `main.cpp` loads all four at
 #'   startup regardless of the simulated period;
@@ -195,6 +198,34 @@ validate_displace_input <- function(input_dir, input_name, scenario = "baseline"
       code_area <- graphsspe_file(input_dir, sc$a_graph, "code_area")
       if (!file.exists(code_area)) {
         err("missing %s", code_area)
+      }
+
+      ## Per-node layers: one value per node, nrow_coord of them. The loader
+      ## refuses to start without each file, and from 1.8.0 it also throws
+      ## unless every one holds at least nrow_coord values (earlier versions
+      ## read past the end instead). See docs/upstream-issues.md 16.
+      if (!is.na(sc$nrow_coord)) {
+        for (layer in PER_NODE_LAYERS) {
+          p <- file.path(input_dir, "graphsspe",
+                         sprintf("coord%d_with_%s.dat", sc$a_graph, layer))
+          if (!file.exists(p)) {
+            if (identical(layer, "icesrectanglecode")) {
+              warn(paste0("missing %s. It is optional, but DISPLACE 1.8.0 built ",
+                          "without displaceR's 'ices-optional' patch refuses to ",
+                          "start without it."), basename(p))
+            } else {
+              err("missing %s", p)
+            }
+            next
+          }
+          nvals <- sum(nzchar(trim(readLines(p, warn = FALSE))))
+          if (nvals < sc$nrow_coord) {
+            err(paste0("%s holds %d values but nrow_coord = %d. DISPLACE 1.8.0 ",
+                       "aborts on this (\"One or more vectors have unexpected ",
+                       "size\"); earlier versions read past the end of the data."),
+                basename(p), nvals, sc$nrow_coord)
+          }
+        }
       }
     }
   }
