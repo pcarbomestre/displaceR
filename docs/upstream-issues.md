@@ -484,6 +484,37 @@ complete. `validate_displace_input()` checks their length.
 
 ---
 
+## 17. `-O` is ignored on Windows — **every Windows run**
+
+Verified at `v1.8.0` (`96eadecb`); the same line is present at `7f2656fb`.
+`simulator/main.cpp`, top of `app_main()`:
+
+```cpp
+#ifdef _WIN32
+    string outdir = "C:";   // declares a local...
+#else
+    outdir = home;          // ...where Linux assigns the global
+#endif
+```
+
+`-O` / `--outdir` is parsed into the **global** `outdir`, which the Windows
+branch shadows with a local, so the option has no effect and every output goes
+to `C:/DISPLACE_outputs/<f>/<F>/`. Found in CI: with SQLite off the run
+completed but wrote nothing under `-O`; with SQLite on it then crashed in
+teardown (issue 3), which looked like a crash at startup because buffered
+stdout was lost.
+
+**How displaceR handles it:** patch `windows-outdir` in the Windows job of
+`.github/workflows/build-displace.yml` turns the declaration into an assignment
+to the global, matching Linux. Guarded on the exact line, so it disappears if
+upstream changes it.
+
+Also seen while debugging, and **not** a problem: the first-chance C++
+exceptions thrown from `boost::astar_search_tree` during path finding. Boost's
+A* stops by throwing from the goal visitor; they are caught.
+
+---
+
 # The ask that would make most of this moot
 
 Every issue above is downstream of one fact: **there are no official headless
