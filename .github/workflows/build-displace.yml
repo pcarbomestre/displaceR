@@ -695,12 +695,14 @@ jobs:
           if [ -x "$CDB" ]; then
             rm -rf "$RUNNER_TEMP/out-dbg"; mkdir -p "$RUNNER_TEMP/out-dbg"
             MSYS_NO_PATHCONV=1 "$CDB" -g -G -o -y "$(cygpath -w "$PWD")" \
-              -c ".lines -e; .ecxr; kP 40; q" \
+              -c "sxe -c \"kP 25; gc\" eh; g; .lines -e; kP 40; q" \
               ./displace.exe -f fake -F baseline -a "$IN" \
               -O "$(cygpath -m "$RUNNER_TEMP/out-dbg")" -s dbg -i 50 -V 0 \
               --disable-crash-handler > "$RUNNER_TEMP/cdb.log" 2>&1
             echo "--- debugger: exception and stack ---"
-            grep -nE "Access violation|exception|code [0-9a-f]{8}|^[0-9a-f]{2} [0-9a-f]{8}|![A-Za-z_]" "$RUNNER_TEMP/cdb.log" | tail -60
+            # Every C++ throw prints its stack; the ones around NodesEvt are
+            # the interesting ones.
+            grep -nE "Access violation|C\+\+ EH exception|![A-Za-z_]" "$RUNNER_TEMP/cdb.log" | tail -150
           else
             echo "cdb not found at $CDB"
           fi
@@ -710,8 +712,10 @@ jobs:
             -O "$(cygpath -m "$RUNNER_TEMP/out-nosql")" -s nosql -i 50 -V 0 \
             --disable-crash-handler --disable-sqlite > "$RUNNER_TEMP/nosql.log" 2>&1
           echo "exit status: $?"
-          tail -5 "$RUNNER_TEMP/nosql.log"
-          echo "text outputs: $(find "$RUNNER_TEMP/out-nosql" -type f | wc -l)"
+          echo "--- nosql log (last 40 lines) ---"
+          tail -40 "$RUNNER_TEMP/nosql.log"
+          echo "--- output tree ---"
+          find "$RUNNER_TEMP/out-nosql" "$RUNNER_TEMP/out" | head -40
 
       - name: Package
         id: package
