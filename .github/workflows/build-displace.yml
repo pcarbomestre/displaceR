@@ -525,6 +525,16 @@ jobs:
             sed -i 's/if (!fill_from_icesrectanglecode(icesrectanglecode_graph,/if (!icesrectanglecode_graph.is_open() || !fill_from_icesrectanglecode(icesrectanglecode_graph,/' "$LOADER"
             PATCHES="${PATCHES}ices-optional "
           fi
+          # windows-outdir: on _WIN32, app_main() declares `string outdir = "C:";`,
+          # a LOCAL that shadows the global -O is parsed into, so -O is ignored
+          # and every output lands in C:/DISPLACE_outputs. Linux assigns the
+          # global instead (`outdir = home;`); do the same. See
+          # docs/upstream-issues.md 17.
+          MAIN=upstream/simulator/main.cpp
+          if grep -q '^    string outdir = "C:";' "$MAIN"; then
+            sed -i 's/^    string outdir = "C:";/    outdir = "C:";/' "$MAIN"
+            PATCHES="${PATCHES}windows-outdir "
+          fi
           echo "BUILD_PATCHES=${PATCHES% }" >> "$GITHUB_ENV"
           echo "applied: ${PATCHES:-none}"
 
@@ -716,6 +726,8 @@ jobs:
           tail -40 "$RUNNER_TEMP/nosql.log"
           echo "--- output tree ---"
           find "$RUNNER_TEMP/out-nosql" "$RUNNER_TEMP/out" | head -40
+          echo "--- C:/DISPLACE_outputs (where an unpatched build writes) ---"
+          find /c/DISPLACE_outputs 2>/dev/null | head -20 || echo "absent"
 
       - name: Package
         id: package
