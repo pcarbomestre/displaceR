@@ -10,6 +10,9 @@
   cpue multiplier's annual update, monthly area closures, times at sea, and TAC
   logic that silently assumed a discard ban. Results are not comparable with
   1.6.6, so the manifest default stays on 1.6.6 until switched deliberately.
+* The macOS payload now bundles Boost, GeographicLib and sqlite like Linux
+  does. The first 1.8.0 macOS build, linked against CI's Homebrew Boost 1.92,
+  aborted at startup on a Mac with Boost 1.90.
 * New build patch `ices-optional`: 1.8.0 aborts at load when
   `graphsspe/coord<N>_with_icesrectanglecode.dat` is missing, although upstream
   treats the file as optional. The patch restores the zeros upstream already
