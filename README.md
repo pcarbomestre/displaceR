@@ -78,21 +78,13 @@ Ready to run.
 This is the first thing to run on a new machine, and the first thing to run when
 something fails for an unclear reason. It never installs or changes anything.
 
-Off Linux the platform line is a note rather than a failure: DISPLACE runs on
-macOS and Windows perfectly well, it is only `install_displace()`'s download
-that is Linux-only.
-
-```
-  [    ] platform          Windows (x86-64). DISPLACE runs here, but
-                           install_displace() only publishes Linux builds --
-                           install upstream's Windows installer and point
-                           DISPLACE_BINARY at the simulator.
-```
+On a platform with no prebuilt binary (an Intel Mac, ARM Linux) the platform
+line is a note rather than a failure, and says how to get a simulator anyway.
 
 ### Install the simulator
 
-On **Linux (x86_64)** and **macOS (Apple Silicon)**, once per machine or per
-shared cache directory:
+On **Linux (x86_64)**, **macOS (Apple Silicon)** and **Windows (x86_64)**, once
+per machine or per shared cache directory:
 
 ```r
 install_displace()      # downloads, verifies sha256, unpacks, chmod +x
@@ -102,13 +94,21 @@ displace_version()      # reports the binary AND the upstream commit it came fro
 `install_displace()` picks the right build for your platform: Linux builds are
 selected by glibc version, macOS and Windows by architecture.
 
-**Other platforms** — Windows, Intel Macs, non-x86_64 Linux — have no prebuilt
-binary yet. Two routes work:
+Every payload carries its own Boost, GeographicLib and sqlite (and, on Windows,
+the Microsoft C++ runtime), so nothing needs installing on the machine first.
+
+**Keep a set of replicates on one platform.** DISPLACE runs are not bit-for-bit
+reproducible even on one machine (see `docs/upstream-issues.md` 11), and each
+platform's C library has its own `rand()`, so replicates from different
+platforms should be expected to agree statistically, not exactly.
+
+**Other platforms** — Intel Macs, non-x86_64 Linux — have no prebuilt binary.
+Two routes work:
 
 ```r
-# 1. Use a DISPLACE you already have (e.g. upstream's Windows installer).
-#    Point at the headless `displace` executable, not the GUI application:
-Sys.setenv(DISPLACE_BINARY = "C:/Program Files/DISPLACE/displace.exe")
+# 1. Use a DISPLACE you already have. Point at the headless `displace`
+#    executable, not the GUI application:
+Sys.setenv(DISPLACE_BINARY = "/path/to/displace")
 
 # 2. Or build one:  ./tools/build-displace.sh --ref <upstream-sha>
 install_displace(from = "displace-<sha>-<platform>.tar.gz")
@@ -302,13 +302,14 @@ committed. See [`docs/upstream-issues.md`](docs/upstream-issues.md).
 
 ## Status
 
-The R package is complete and tested. No Linux binary is published as a release
-yet, so on Linux `install_displace()` needs `from =` or `DISPLACE_BINARY`; on
-Windows and macOS, install upstream's package and set `DISPLACE_BINARY`.
+The R package is complete and tested. `install_displace()` downloads DISPLACE
+1.8.0 for Linux x86_64 (glibc 2.39), macOS Apple Silicon and Windows x86_64.
 
-**Verified where:** the R layer's readers, writers and runner were exercised
-against a real DISPLACE run on Linux. The platform handling described above is
-tested, but no DISPLACE run has yet been driven from R on Windows or macOS —
+**Verified where:** every published binary is built in CI and runs the minitest
+case study before it is released. On Linux and Windows CI also runs the
+package's full test suite, golden-file tests included, against the new binary;
+on macOS that suite was run by hand. The Windows binary has so far been run
+only on GitHub's Windows machines, not yet on an ordinary Windows PC --
 if you do that, `displace_doctor()` is the place to start and a surprise there
 is worth reporting.
 
