@@ -28,6 +28,19 @@
   `timeatsea` in `loglike_*.dat` to one decimal. The `loglike` reader already
   types those columns by inference, so no reader change was needed.
 
+## Windows
+
+* `install_displace()` now installs DISPLACE 1.8.0 on Windows x86_64. The
+  binary is built with MSVC and vcpkg in CI, bundles Boost, GeographicLib,
+  sqlite and the Microsoft C++ runtime, and passes the minitest smoke test and
+  the package's own test suite on `windows-2022`.
+* New build patch `windows-outdir`: on Windows the simulator ignored `-O` and
+  wrote every output to `C:/DISPLACE_outputs`, because a local variable
+  shadowed the option. See `docs/upstream-issues.md` 17.
+* Each platform's C library has its own `rand()`; keep a set of replicates on
+  one platform (runs are not bit-reproducible anyway, `docs/upstream-issues.md`
+  11).
+
 ## R 4.6
 
 * `R CMD check --as-cran` is clean on R 4.6.1 (0 errors, 0 warnings), and the
