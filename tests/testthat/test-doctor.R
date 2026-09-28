@@ -50,7 +50,8 @@ test_that("the platform and simulator lines do not contradict each other", {
   local_mocked_bindings(read_manifest = function() list(
     default = "v", versions = list(v = list(builds = list(
       "2.39" = list(url = "linux"),
-      "macos-arm64" = list(url = "mac")
+      "macos-arm64" = list(url = "mac"),
+      "windows-x86_64" = list(url = "windows")
     )))
   ))
   withr_env(list(DISPLACER_CACHE = tempfile(), DISPLACE_BINARY = ""), {

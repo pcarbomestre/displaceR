@@ -66,6 +66,9 @@ test_that("the whole payload is installed, not just the executable", {
 })
 
 test_that("the installed executable is made executable", {
+  ## Windows has no execute bit -- chmod is a no-op there and the .exe
+  ## extension is what makes a file runnable -- so there is nothing to check.
+  skip_on_os("windows")
   cache <- tempfile()
   withr_env(list(DISPLACER_CACHE = cache, DISPLACE_BINARY = ""), {
     exe <- suppressMessages(install_displace(from = make_payload()))
