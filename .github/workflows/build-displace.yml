@@ -708,7 +708,9 @@ jobs:
           export DISPLACE_BINARY="$(cygpath -m "$RUNNER_TEMP/relocated/displace.exe")"
           export DISPLACE_MINITEST_DIR="$(cygpath -m "$RUNNER_TEMP/minitest")"
           export DISPLACE_INPUT_NAME=fake
-          Rscript -e 'install.packages(c("testthat","jsonlite","DBI","RSQLite","pkgload","digest"))'
+          # Explicit repos: unlike on Linux, a bare Rscript here saw no mirror
+          # ("Error in contrib.url(repos, ...)").
+          Rscript -e 'install.packages(c("testthat","jsonlite","DBI","RSQLite","pkgload","digest"), repos = "https://cloud.r-project.org", type = "binary")'
           Rscript -e 'pkgload::load_all("."); r <- as.data.frame(testthat::test_local(".", reporter = "summary", stop_on_failure = FALSE)); cat("failed:", sum(r$failed), " errors:", sum(r$error), " skipped:", sum(r$skipped), " passed:", sum(r$passed), "\n"); if (sum(r$failed) + sum(r$error) > 0) quit(status = 1)'
 
       - name: Diagnose a failed smoke test
