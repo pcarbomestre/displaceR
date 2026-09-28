@@ -53,7 +53,7 @@
         "differs from 1.6.6 (N depletion, cpue multiplier, area closures, TAC",
         "logic), so results are not comparable across the two. Built with the",
         "ices-optional patch: a missing coord<N>_with_icesrectanglecode.dat no longer",
-        "aborts the load. Both payloads bundle their third-party libraries."
+        "aborts the load. All payloads bundle their third-party libraries; the Windows one also ships the MSVC runtime and carries the windows-outdir patch."
       ],
       "builds": {
         "2.39": {
@@ -67,6 +67,12 @@
           "sha256": "37c0cc0edc8f971e88cd1300cc312cb9abc5c7d978c672f12994993ca265c6fa",
           "arch": "arm64",
           "built_on": "macos-14"
+        },
+        "windows-x86_64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb/displace-96eadecb1980-windows-x86_64.tar.gz",
+          "sha256": "a9951f2ac0756402cd70d4381b5a7d123b0dc46a5e72c5be0d953f0b532fe985",
+          "arch": "x86_64",
+          "built_on": "windows-2022"
         }
       }
     },
