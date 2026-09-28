@@ -79,8 +79,9 @@ test_that("run_displace does not impose a maximum step count", {
   r <- run_displace("/in", "case", steps = 87673, dry_run = TRUE,
                     validate = FALSE, binary = exit_binary("true"))
   expect_equal(r$steps, 87673L)
-  ## Arguments are shell-quoted individually, so the pair reads '-i' '87673'.
-  expect_match(r$command, "'-i'[[:space:]]*'87673'")
+  ## Arguments are shell-quoted individually, so the pair reads '-i' '87673'
+  ## -- or "-i" "87673" on Windows, where shQuote() uses double quotes.
+  expect_match(r$command, "['\"]-i['\"][[:space:]]*['\"]87673['\"]")
 
   ## Nonsense is still refused.
   expect_error(
@@ -99,7 +100,11 @@ test_that("a dry run reports the command without needing a binary", {
   expect_true(is.na(r$status))
   expect_match(r$command, "/opt/displace/displace")
   expect_match(r$command, "-f")
-  expect_equal(r$output_path, "/tmp/o/DISPLACE_outputs/minitest/baseline")
+  ## Normalised the way run_displace() does it, so Windows gets its drive
+  ## letter ("D:\\tmp\\o") and Unix gets "/tmp/o".
+  expect_equal(r$output_path,
+               file.path(normalizePath("/tmp/o", mustWork = FALSE),
+                         "DISPLACE_outputs", "minitest", "baseline"))
   ## Path built in simulator/main.cpp:740 as <f>_<s>_out.db.
   expect_equal(basename(r$db_path), "minitest_sim1_out.db")
 })
