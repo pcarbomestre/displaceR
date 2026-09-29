@@ -229,6 +229,10 @@ What exists instead:
 - `read/write_displace_scenario()` — the scenario `.dat`;
 - `read/write_displace_graph()`, `read_displace_code_area()` — the stacked
   triple;
+- `build_displace_graph()`, `link_displace_harbours()` — generate that triple
+  from polygons, as the editor GUI's "Create Graph" / "Link Harbours" do
+  (see `docs/graph-builder.md`). The per-node `coord<N>_with_<layer>.dat`
+  layers are not generated yet;
 - `validate_displace_input()` — the structural checks that abort loading.
 
 The natural next step is to port the writers from

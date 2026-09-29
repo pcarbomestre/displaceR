@@ -61,14 +61,17 @@ read_stacked <- function(path, nrow, blocks) {
   out
 }
 
-write_stacked <- function(path, columns) {
+write_stacked <- function(path, columns, digits = NULL) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   lens <- vapply(columns, length, integer(1))
   if (length(unique(lens)) != 1L) {
     stopf("all blocks must have the same length; got %s",
           paste(sprintf("%s=%d", names(lens), lens), collapse = ", "))
   }
-  writeLines(unlist(lapply(columns, fmt_num), use.names = FALSE), path)
+  fmt <- function(x) {
+    if (is.null(digits) || is.integer(x)) fmt_num(x) else sprintf("%.*g", as.integer(digits), x)
+  }
+  writeLines(unlist(lapply(columns, fmt), use.names = FALSE), path)
   invisible(path)
 }
 
@@ -192,6 +195,12 @@ read_displace_graph <- function(input_dir,
 #'   given, `code_area_for_graph<N>_points.dat` is written too. The simulator
 #'   reads and discards the first two blocks of that file, so they are filled
 #'   with zeros.
+#' @param digits Significant digits for coordinates and edge weights. `NULL`
+#'   (the default) writes every digit R holds. `6` gives the editor GUI's
+#'   number format, because Qt's `QTextStream` prints doubles with 6
+#'   significant digits. A GUI-built coord file is then reproduced byte for
+#'   byte. At 6 digits a longitude like -125.857 is only resolved to about
+#'   100 m.
 #'
 #' @return The paths written, invisibly.
 #' @export
@@ -203,7 +212,7 @@ read_displace_graph <- function(input_dir,
 #' )
 #' write_displace_graph(g, tempdir(), a_graph = 1)
 write_displace_graph <- function(graph, input_dir, a_graph = NULL,
-                                 code_area = NULL) {
+                                 code_area = NULL, digits = NULL) {
   nodes <- graph$nodes
   edges <- graph$edges
   a_graph <- a_graph %||% graph$a_graph %||%
@@ -219,7 +228,8 @@ write_displace_graph <- function(graph, input_dir, a_graph = NULL,
 
   paths["coord"] <- write_stacked(
     graphsspe_file(input_dir, a_graph, "coord"),
-    list(lon = nodes$lon, lat = nodes$lat, harbour = as.integer(nodes$harbour))
+    list(lon = nodes$lon, lat = nodes$lat, harbour = as.integer(nodes$harbour)),
+    digits = digits
   )
 
   if (!is.null(edges)) {
@@ -237,7 +247,8 @@ write_displace_graph <- function(graph, input_dir, a_graph = NULL,
       graphsspe_file(input_dir, a_graph, "graph"),
       list(from = as.integer(edges$from),
            to = as.integer(edges$to),
-           dist_km = edges$dist_km)
+           dist_km = edges$dist_km),
+      digits = digits
     )
   }
 

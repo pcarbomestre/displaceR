@@ -1,5 +1,33 @@
 # displaceR 0.1.0.9000
 
+## Building graphs from polygons
+
+* New `build_displace_graph()`: an R port of the editor GUI's "Create Graph"
+  (`qtgui/graphbuilder_shp.cpp` upstream), which the headless simulator does
+  not include. It lays a hex or square grid over a box, keeps the nodes inside
+  the `include` polygons and outside the `exclude` ones, and links neighbours by
+  Delaunay triangulation, with WGS84 geodesic km as edge weights. It supports
+  two include areas at different resolutions and an optional coarser "outside"
+  grid, like the GUI. Needs `sf` (Suggests).
+* New `link_displace_harbours()`: the GUI's "Load Harbours" and "Link
+  Harbours". Appends ports as harbour nodes and links each one to its nearest
+  sea nodes. It also reads the GUI's `name;lon;lat;code` harbour file.
+* Checked against the westcoast case study's GUI-built graph. From the same
+  shapefiles it gives byte-identical `coord` files and the same edges and
+  weights. `write_displace_graph(digits = 6)` writes the GUI's 6-significant-digit
+  number format.
+* New `add_displace_closure()` and `write_displace_closures()`: the GUI's
+  "Add Penalty from File". Each edge crossing a polygon gets `weight` added
+  once per polygon it crosses, and nodes inside are written to the monthly
+  `metier_`, `vsize_` and `nation_closure_a_graph<N>_month<M>.dat` files. The
+  deprecated quarterly files, which the simulator no longer reads, are not
+  written. Checked against the westcoast graph 2 (wind lease areas at weight
+  500): all 36 closure files are byte-identical and every penalised weight
+  matches.
+* The output goes straight into `write_displace_graph()`. See
+  `docs/graph-builder.md` for how the port differs from the GUI and why it is
+  a port rather than a compiled upstream tool.
+
 ## DISPLACE 1.8.0
 
 * Verified against upstream `v1.8.0` (`96eadecb`). 16 commits past `7f2656fb`;
