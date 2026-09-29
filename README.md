@@ -1,4 +1,4 @@
-# displaceR <img src="man/figures/logo.svg" align="right" height="200" alt="displaceR logo" />
+# displaceR <img src="man/figures/logo.svg" align="right" height="280" alt="displaceR logo" />
 
 > ### This is not the DISPLACE model
 >
