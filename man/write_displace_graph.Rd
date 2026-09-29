@@ -4,7 +4,13 @@
 \alias{write_displace_graph}
 \title{Write the DISPLACE spatial graph}
 \usage{
-write_displace_graph(graph, input_dir, a_graph = NULL, code_area = NULL)
+write_displace_graph(
+  graph,
+  input_dir,
+  a_graph = NULL,
+  code_area = NULL,
+  digits = NULL
+)
 }
 \arguments{
 \item{graph}{A `displace_graph`, or a list with `nodes` and `edges` data
@@ -18,6 +24,13 @@ frames using the same column names [read_displace_graph()] returns.}
 given, `code_area_for_graph<N>_points.dat` is written too. The simulator
 reads and discards the first two blocks of that file, so they are filled
 with zeros.}
+
+\item{digits}{Significant digits for coordinates and edge weights. `NULL`
+(the default) writes every digit R holds. `6` gives the editor GUI's
+number format, because Qt's `QTextStream` prints doubles with 6
+significant digits. A GUI-built coord file is then reproduced byte for
+byte. At 6 digits a longitude like -125.857 is only resolved to about
+100 m.}
 }
 \value{
 The paths written, invisibly.

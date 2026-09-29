@@ -247,11 +247,49 @@ validate_displace_input("/data/mycase", "mycase")
 ```
 
 **This is not a full case-study generator.** A complete `DISPLACE_input_xx` tree
-is roughly 150 files. What is implemented here is the folder skeleton, the four
-formats whose parsers have been read line by line (`config.dat`, the scenario
-`.dat`, and the stacked graph triple), and a validator that catches the failures
-the loader actually throws on. See [`docs/roadmap.md`](docs/roadmap.md) for what
+is roughly 150 files. What is implemented here is:
+
+- the folder skeleton;
+- the four formats whose parsers have been read line by line: `config.dat`, the
+  scenario `.dat`, and the stacked graph triple;
+- building the graph itself, and its closures, from shapefiles (below);
+- a validator that catches the failures the loader actually throws on. See [`docs/roadmap.md`](docs/roadmap.md) for what
 is missing and why.
+
+### Build the graph from shapefiles
+
+The editor GUI's **Create Graph**, **Link Harbours** and **Add Penalty from File**
+are not part of the headless simulator, so they are reimplemented in R. This
+needs the `sf` package.
+
+```r
+# 1. Nodes on a hex grid inside the study area and outside the exclusion area,
+#    linked by Delaunay triangulation; weights are geodesic km.
+g <- build_displace_graph(
+  bbox = c(-125.9199, 31.96527, -117.15335, 48.8),   # xmin, ymin, xmax, ymax
+  step_km = 4, type = "hex", method = "planar",
+  include = "shp/graph_area.shp", exclude = "shp/exclusion_area.shp",
+  max_edge_km = 20)                    # always set: drops hull/bay-crossing edges
+
+# 2. Ports: appended as harbour nodes, each linked to its 3 nearest nodes.
+g <- link_displace_harbours(g, "harbours.dat")      # name;lon;lat;code
+
+# 3. Optional closures: +500 km on edges crossing the areas, and the nodes
+#    inside closed to metiers 0-24 all year.
+g <- add_displace_closure(g, "shp/ca_lease_areas_2024.shp", weight = 500,
+                          metiers = 0:24, vessel_sizes = c(0, 1, 2, 4),
+                          nations = 0)
+
+write_displace_graph(g, "/data/mycase", a_graph = 2, digits = 6)
+write_displace_closures(g, "/data/mycase", a_graph = 2)
+# then put g$nrow_coord and g$nrow_graph into the scenario file
+```
+
+Run on the westcoast case study's shapefiles with its GUI settings, this
+reproduces the GUI-built `coord` and closure files byte for byte, with the same
+edges and weights in `graph`. Within each node, edges are listed in a different
+order. See [`docs/graph-builder.md`](docs/graph-builder.md) for how each step
+maps onto the GUI.
 
 ## Three things about DISPLACE that will bite you
 
