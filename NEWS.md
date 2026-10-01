@@ -1,5 +1,25 @@
 # displaceR 0.1.0.9000
 
+## Port-tagged fishing grounds (`grounds-by-port` feature patch, branch only)
+
+* `tools/build-displace.sh --patch grounds-by-port` builds DISPLACE v1.8.0 with
+  `tools/patches/grounds-by-port.patch`: a new `dyn_alloc_sce` option
+  `grounds_by_port` under which each vessel reads
+  `vesselsspe_<app>/<vid>_fgrounds_harbours_quarter<N>.dat`, draws a trip port,
+  fishes only that port's grounds and lands there (A -> grounds of B -> B).
+  `loglike` gains `trip_port` and `dep_port` at the end of each line. Without
+  the option the build behaves as plain v1.8.0. Opt-in, recorded as
+  `feature_patches` in `build-info.json`. Spec: `docs/grounds-by-port-spec.md`.
+* New `write_displace_fgrounds_harbours()`, `read_displace_fgrounds_harbours()`,
+  `check_grounds_by_port()` and `displace_features()`.
+  `read_displace_loglike()` names the two new columns;
+  `displace_output_spec("loglike", grounds_by_port = TRUE)` lists them.
+* `run_displace()` refuses a scenario using `grounds_by_port` on a binary whose
+  build record lacks the patch (`check_features = FALSE` overrides): an
+  unpatched simulator ignores the option and would silently run baseline.
+* Local installs of feature-patched builds get their own label
+  (`1.8.0-96eadecb1980-grounds-by-port-local`) and record `feature_patches`.
+
 ## Building graphs from polygons
 
 * New `build_displace_graph()`: an R port of the editor GUI's "Create Graph"

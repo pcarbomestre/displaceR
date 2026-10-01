@@ -25,7 +25,8 @@ run_displace(
   binary = NULL,
   echo = TRUE,
   dry_run = FALSE,
-  validate = TRUE
+  validate = TRUE,
+  check_features = TRUE
 )
 }
 \arguments{
@@ -107,6 +108,12 @@ for long runs; set `FALSE` when running many replicates.}
 \item{validate}{Run [validate_displace_input()] before launching. Cheap, and
 it catches the input errors that otherwise surface as an opaque simulator
 abort.}
+
+\item{check_features}{Refuse to run a scenario whose `dyn_alloc_sce` uses an
+option that only a feature-patched build understands (currently
+`grounds_by_port`, see [check_grounds_by_port()]) on a binary whose build
+record does not list that patch. The simulator ignores unknown option
+names, so without this the run would silently be plain baseline.}
 }
 \value{
 An object of class `displace_run`: a list with the resolved

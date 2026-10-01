@@ -21,6 +21,11 @@
 #
 # Usage:
 #   tools/build-displace.sh --ref <upstream-git-ref> [--workdir DIR] [--outdir DIR]
+#                           [--patch NAME]...
+#
+# --patch NAME applies the opt-in feature patch tools/patches/NAME.patch (e.g.
+# grounds-by-port, see docs/grounds-by-port-spec.md) before the build-time
+# patches. Without it the build is plain upstream, as released.
 #
 # Produces $OUTDIR/payload/ with RPATH=$ORIGIN, plus $OUTDIR/build-info.json.
 # The payload holds the displace binary, the DISPLACE shared libraries, and (on
@@ -34,6 +39,7 @@ SPARSEPP_REPO="${SPARSEPP_REPO:-https://github.com/greg7mdp/sparsepp.git}"
 MSQLITECPP_REPO="${MSQLITECPP_REPO:-https://github.com/studiofuga/mSqliteCpp.git}"
 
 REF=""
+FEATURE_PATCHES=""
 WORKDIR="$(pwd)/.displace-build"
 OUTDIR="$(pwd)/dist"
 # nproc is GNU coreutils and absent on macOS, where sysctl is the equivalent.
@@ -49,7 +55,8 @@ while [ $# -gt 0 ]; do
     --workdir) WORKDIR="${2:?--workdir needs a value}"; shift 2 ;;
     --outdir)  OUTDIR="${2:?--outdir needs a value}"; shift 2 ;;
     --jobs)    JOBS="${2:?--jobs needs a value}"; shift 2 ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --patch)   FEATURE_PATCHES="${FEATURE_PATCHES:+$FEATURE_PATCHES }${2:?--patch needs a value}"; shift 2 ;;
+    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
     *)         die "unknown argument: $1" ;;
   esac
 done
@@ -124,6 +131,34 @@ log "upstream $REF -> $UPSTREAM_SHA"
 # Both should be reported upstream — see docs/upstream-issues.md.
 
 PATCHES_APPLIED=""
+
+# Feature patches (opt-in, --patch NAME).
+#
+# Unlike the compatibility patches below, these change model behaviour, so they
+# are never applied by default and they fail loudly: a build that asked for one
+# must not silently produce a plain upstream binary. They are applied first, to a
+# pristine tree, because they are diffs against the upstream sources and the
+# compatibility patches below edit some of the same files.
+#
+# A reused --workdir may hold a tree patched by an earlier run, with or without
+# feature patches, so restore the tracked files first whenever feature patches
+# are involved now or were last time (the marker file). This only touches the
+# throwaway checkout in --workdir.
+FEATURE_MARKER="$WORKDIR/DISPLACE_GUI/.displaceR-feature-patches"
+if [ -n "$FEATURE_PATCHES" ] || [ -f "$FEATURE_MARKER" ]; then
+  log "restoring the upstream tree in $WORKDIR/DISPLACE_GUI before (re)patching"
+  git -C "$WORKDIR/DISPLACE_GUI" checkout -- .
+  rm -f "$FEATURE_MARKER"
+fi
+for fp in $FEATURE_PATCHES; do
+  pfile="$(cd "$(dirname "$0")" && pwd)/patches/$fp.patch"
+  [ -f "$pfile" ] || die "unknown feature patch '$fp' (no $pfile)"
+  git -C "$WORKDIR/DISPLACE_GUI" apply --check "$pfile" ||
+    die "feature patch '$fp' does not apply to upstream $REF ($UPSTREAM_SHA); it was written against v1.8.0"
+  log "applying feature patch $fp"
+  git -C "$WORKDIR/DISPLACE_GUI" apply "$pfile"
+  echo "$fp" >> "$FEATURE_MARKER"
+done
 
 # BSD sed (macOS) requires an argument to -i; GNU sed (Linux) requires that it
 # be absent. One helper keeps every patch below identical on both.
@@ -748,6 +783,7 @@ cat > "$OUTDIR/build-info.json" <<JSON
   "glibc": "${GLIBC_VERSION:-unknown}",
   "arch": "$(uname -m)",
   "build_patches": "$(echo "$PATCHES_APPLIED" | sed 's/[[:space:]]*$//')",
+  "feature_patches": "$FEATURE_PATCHES",
   "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON

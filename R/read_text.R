@@ -172,6 +172,13 @@ read_displace_output <- function(x,
   }
   observed <- length(strsplit(trim(first[1]), "[[:space:]]+")[[1]])
 
+  ## A grounds-by-port build appends trip_port and dep_port to loglike when the
+  ## scenario enables grounds_by_port; recognise them by the width.
+  if (identical(type, "loglike") &&
+      observed == length(cols) + length(LOGLIKE_GROUNDS_BY_PORT_COLS)) {
+    cols <- c(cols, LOGLIKE_GROUNDS_BY_PORT_COLS)
+  }
+
   if (observed != length(cols)) {
     hint <- if (is.null(spec$cols)) {
       sprintf(paste0("\nThis layout's width depends on nbpops (given as %s). ",
@@ -212,6 +219,11 @@ read_displace_output <- function(x,
 #' column count of `loglike_*.dat` depends on the number of populations and on
 #' which of them are modelled explicitly, so it cannot be read without the case
 #' study's `config.dat`.
+#'
+#' Runs of a `grounds-by-port` build with the `grounds_by_port` option have two
+#' more columns at the end, `trip_port` (node of the port whose grounds the
+#' trip fished, `-1` if the vessel had no port-tagged entries) and `dep_port`
+#' (node the trip left from); they are recognised by the width and named.
 #'
 #' @param x A `displace_run` or an output directory.
 #' @param config A `displace_config` from [read_displace_config()].

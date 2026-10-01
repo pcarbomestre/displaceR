@@ -496,6 +496,8 @@ install_displace_local <- function(from, version = NULL, overwrite = FALSE,
       sprintf("glibc_target: %s", info$glibc %||% "unknown"),
       sprintf("url: local:%s", from),
       sprintf("build_patches: %s", info$build_patches %||% "unknown"),
+      sprintf("feature_patches: %s",
+              if (is.null(info)) "unknown" else if (nzchar(info$feature_patches %||% "")) info$feature_patches else "none"),
       sprintf("installed_at: %s", format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"))),
     file.path(dest, "displaceR-install.txt")
   )
@@ -516,7 +518,11 @@ local_version_label <- function(info) {
   sha <- info$upstream_sha
   if (!is.null(sha) && nzchar(sha)) {
     ver <- info$displace_version %||% "displace"
-    return(sprintf("%s-%s-local", ver, substr(sha, 1, 12)))
+    ## A feature-patched build of the same commit must not overwrite (or be
+    ## mistaken for) the plain one, so the patches are part of the label.
+    feat <- gsub("[[:space:]]+", "+", trim(info$feature_patches %||% ""))
+    return(sprintf("%s-%s%s-local", ver, substr(sha, 1, 12),
+                   if (nzchar(feat)) paste0("-", feat) else ""))
   }
   "local"
 }
