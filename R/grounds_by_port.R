@@ -431,7 +431,7 @@ check_binary_features <- function(binary, input_dir, input_name, scenario) {
     stopf(paste0("scenario '%s' uses dyn_alloc_sce option(s) %s, which need a DISPLACE ",
                  "build with the feature patch(es) %s, but %s %s. An unpatched simulator ",
                  "ignores the option and runs plain baseline.\nBuild one with ",
-                 "tools/build-displace.sh --ref v1.8.0 --patch %s, or pass ",
+                 "tools/build-displace.sh --ref v1.8.0 --patch %s --patch headless-ipc-lazy, or pass ",
                  "check_features = FALSE to run anyway."),
           scenario, paste(names(missing), collapse = ", "),
           paste(unname(missing), collapse = ", "), binary,

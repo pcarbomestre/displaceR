@@ -515,6 +515,27 @@ A* stops by throwing from the goal visitor; they are caught.
 
 ---
 
+## 18. Headless runs create shared memory, and simultaneous starts can abort
+
+Verified at `v1.8.0` (`96eadecb`). The global `OutputQueueManager mOutQueue`
+(`simulator/ipc.cpp`) holds an `IpcQueue` by value. Constructing one opens, or
+if absent creates, the machine-wide boost::interprocess shared memory
+`"OutQueue"` (`commons/ipcqueue.cpp`), at static initialisation, so every run
+does it, headless or not, although only `--use-gui` ever uses it. Two
+processes starting together can both miss the open and race on the create;
+the loser aborts with `interprocess_exception: File exists` (exit 134, no
+steps run). Seen 7 of 8 times in one round of simultaneous starts, otherwise
+rare. Backed by `/tmp/boost_interprocess/` on macOS and `/dev/shm/OutQueue` on
+Linux, so all users of a machine share the one name.
+
+**How displaceR handles it:** opt-in patch `headless-ipc-lazy`
+(`tools/patches/headless-ipc-lazy.patch`, `--patch headless-ipc-lazy`) makes
+the member a `unique_ptr` created in `OutputQueueManager::start()` only for the
+Binary (GUI) protocol. Headless runs never touch the shared memory; outputs are
+byte-identical. Currently on branch `displace-grounds-by-port` only.
+
+---
+
 # The ask that would make most of this moot
 
 Every issue above is downstream of one fact: **there are no official headless

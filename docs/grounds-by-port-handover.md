@@ -19,7 +19,7 @@ State on 2026-10-01. Details: [plan](grounds-by-port-plan.md),
 ```sh
 # in the displaceR checkout, branch displace-grounds-by-port (macOS or Linux,
 # same build deps as the released binary)
-tools/build-displace.sh --ref v1.8.0 --patch grounds-by-port \
+tools/build-displace.sh --ref v1.8.0 --patch grounds-by-port --patch headless-ipc-lazy \
     --workdir scratch/build-patched --outdir scratch/dist-gbp
 ```
 
@@ -27,7 +27,7 @@ tools/build-displace.sh --ref v1.8.0 --patch grounds-by-port \
 # install the payload into displaceR's cache (label 1.8.0-96eadecb1980-grounds-by-port-local)
 displaceR::install_displace(from = "scratch/dist-gbp/payload")   # or point at it directly:
 bin <- "scratch/dist-gbp/payload/displace"
-displaceR::displace_features(bin)          # "grounds-by-port"
+displaceR::displace_features(bin)          # "grounds-by-port" "headless-ipc-lazy"
 
 res <- displaceR::run_displace(input_dir, "westcoast_xxx", scenario = "baseline_gbp",
                                binary = bin, steps = 8762, sqlite = FALSE,
@@ -45,8 +45,14 @@ simulator would silently run baseline). Reference writer for the new file:
 `write_displace_fgrounds_harbours()`; reader with derived probabilities:
 `read_displace_fgrounds_harbours()`.
 
-For a Linux server build, run the same script on the Linux builder with
-`--patch grounds-by-port`; the CI workflow does not pass `--patch` yet.
+`headless-ipc-lazy` is a second, independent patch: headless runs no longer
+create the shared-memory object `OutQueue` (used only to talk to the desktop
+GUI), which could make simultaneous starts abort with "File exists". It does
+not change results (byte-identical outputs, see the log). Both are opt-in;
+without `--patch` the script builds plain upstream.
+
+For a Linux server build, run the same script on the Linux builder with both
+`--patch` flags; the CI workflow does not pass `--patch` yet.
 
 ## Check results (all on macOS arm64)
 
@@ -85,9 +91,10 @@ For a Linux server build, run the same script on the Linux builder with
    `closer_port`, `focus_on_high_previous_cpue`, `focus_on_high_profit_grounds`,
    `fuelprice_plus20percent`, `shared_harbour_knowledge`, ChooseGround dtree;
    `--indb` input. None is used by validation_1.0.
-6. **Parallel runs.** Simultaneous DISPLACE starts can abort on the shared
-   IPC object `OutQueue` ("File exists"); stagger them. With SQLite on, text
-   outputs can lose their last buffer at the teardown crash; use
-   `sqlite = FALSE` when text files are the product.
+6. **Parallel runs.** Plain DISPLACE builds can abort when several start at
+   the same moment (shared object `OutQueue`, "File exists"); builds with
+   `headless-ipc-lazy` cannot. With SQLite on, text outputs can lose their
+   last buffer at the teardown crash; use `sqlite = FALSE` when text files are
+   the product.
 7. Nothing was pushed, no PR, nothing filed upstream. The branch has local
    commits only.

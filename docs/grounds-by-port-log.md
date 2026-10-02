@@ -229,3 +229,51 @@ Skipped: 1 doctor test (no `ldd` on macOS) and the golden tests (no
 `DISPLACE_BINARY`); with `DISPLACE_BINARY` set to the patched binary the
 golden tests pass too. `R CMD check` (`devtools::check()`, no manual):
 0 errors, 0 warnings, 0 notes.
+
+## 2026-10-02
+
+### `headless-ipc-lazy`: no shared memory in headless runs
+
+Problem (upstream, every build): the global `OutputQueueManager mOutQueue`
+(`simulator/ipc.cpp`) holds an `IpcQueue` by value, and constructing one opens
+or creates the machine-wide boost::interprocess shared memory `"OutQueue"`
+(`commons/ipcqueue.cpp`: try `open_only`, else `create_only`). This happens at
+static initialisation, before `--use-gui` is even parsed, so every headless
+run touches it. Two processes starting together can both fail the open and
+then race on the create; the loser aborts with
+`interprocess_exception: File exists` (exit 134, 0 steps). On macOS boost
+backs the object with files under `/tmp/boost_interprocess/`; on Linux with
+`/dev/shm/OutQueue`.
+
+Fix: `tools/patches/headless-ipc-lazy.patch` (simulator/outputqueuemanager.h/.cpp,
++8/-2): the member becomes `std::unique_ptr<IpcQueue>`, created in `start()`
+only when the protocol is Binary, i.e. when `--use-gui` was given. GUI runs
+create it as before (just before the output thread starts); headless runs
+never do. Opt-in like `grounds-by-port`:
+
+```
+tools/build-displace.sh --ref v1.8.0 --patch grounds-by-port --patch headless-ipc-lazy \
+    --workdir scratch/build-patched --outdir scratch/dist-gbp     # scratch/logs/build-gbp-ipc.log
+```
+
+Build: OK, same 8 compiler warnings; `feature_patches: grounds-by-port
+headless-ipc-lazy`. This build replaced `scratch/dist-gbp`.
+
+Tests (`scratch/race.sh`: N minitest runs of 50 steps started at once, sqlite off):
+
+- Old binary (grounds-by-port only), first round of the day, 8 at once: **7 of 8
+  aborted** (exit 134). The race is intermittent: the old binary's later
+  rounds, 224 starts in all (incl. 10 rounds x 16 with
+  `/tmp/boost_interprocess/` removed before each), aborted 0. It seems to hit
+  mostly the first creation after a reboot, when that directory does not exist
+  yet.
+- New binary: 0 of 232 starts aborted, and in the 3 rounds checked from a clean
+  state (directory removed first) it never created `/tmp/boost_interprocess/`,
+  i.e. the object the race is about is no longer used at all.
+- Results unchanged: old vs new binary, same seed, one thread, sqlite off --
+  minitest `baseline` 4,000 steps and the synthetic app's `gbp` 8,762 steps:
+  all 39 text output files byte-identical in both.
+
+Cleanup outside the repo: the empty `/tmp/boost_interprocess/` directory
+created by these test runs was removed with `rmdir` between rounds; it is
+recreated by any plain DISPLACE run, and is harmless.

@@ -17,6 +17,10 @@
 * `run_displace()` refuses a scenario using `grounds_by_port` on a binary whose
   build record lacks the patch (`check_features = FALSE` overrides): an
   unpatched simulator ignores the option and would silently run baseline.
+* Second opt-in patch, `--patch headless-ipc-lazy`: headless runs no longer
+  create the shared-memory object `OutQueue`, which only the desktop GUI uses
+  and which could make DISPLACE runs started at the same moment abort with
+  "File exists". Outputs are unchanged. See `docs/upstream-issues.md` 18.
 * Local installs of feature-patched builds get their own label
   (`1.8.0-96eadecb1980-grounds-by-port-local`) and record `feature_patches`.
 
