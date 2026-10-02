@@ -214,6 +214,13 @@ check_displace_replicates <- function(output_path, sim_names, steps,
 #'   `num_threads = 1` when doing so: otherwise the load is the product of the
 #'   two and oversubscribes the machine.
 #' @param quiet Suppress progress messages.
+#' @param start_lag Minimum seconds between two replicate launches, enforced
+#'   across parallel workers through a small lock in `output_dir`
+#'   (`.displaceR-launch/`). Each run reads its whole input tree at start
+#'   (about 7.5 s for the West Coast application on a local disk), so spacing
+#'   launches keeps those reads apart. A launch only waits if the previous one
+#'   was less than `start_lag` ago, so a campaign run one at a time is not
+#'   delayed by runs of real length. `0` disables it.
 #'
 #' @return A list with `runs` (named list of the last `displace_run` per
 #'   replicate, `NULL` where every attempt errored), `status` (a data frame of
@@ -239,7 +246,8 @@ run_displace_campaign <- function(n,
                                   margin = 1000L,
                                   max_passes = 10L,
                                   map = NULL,
-                                  quiet = FALSE) {
+                                  quiet = FALSE,
+                                  start_lag = 15) {
   n <- as.integer(n)
   if (is.na(n) || n < 1L) stopf("n must be a positive integer.")
   steps <- as.integer(steps)
@@ -276,6 +284,7 @@ run_displace_campaign <- function(n,
   ## as furrr::future_map provides, so swapping one for the other is the only
   ## change needed to parallelise a campaign.
   map <- map %||% function(thunks) lapply(thunks, function(f) f())
+  gate_dir <- file.path(normalizePath(output_dir), ".displaceR-launch")
 
   ## Every replicate shares one output tree, as the upstream .bat does. That is
   ## what lets a campaign resume: replicates already complete on disk are
@@ -326,7 +335,10 @@ run_displace_campaign <- function(n,
         if (is.null(args$echo)) args$echo <- FALSE
         ## A replicate that errors must not abort the campaign: that is the
         ## whole point of retrying. Record it and let the next pass decide.
-        tryCatch(do.call(run_displace, args),
+        tryCatch({
+                   wait_for_launch_slot(gate_dir, start_lag)
+                   do.call(run_displace, args)
+                 },
                  error = function(e) {
                    warnf("replicate %s failed: %s", nm, conditionMessage(e))
                    NULL
@@ -356,4 +368,54 @@ run_displace_campaign <- function(n,
   )
 
   list(runs = runs, status = status, passes = pass - 1L, output_path = leaf())
+}
+
+## Launch gate shared by parallel workers.
+##
+## Replicates run in separate R processes under future/furrr, so a plain
+## Sys.sleep() cannot space their launches. Instead every launch goes through
+## a lock directory inside the shared output folder: the holder waits until
+## `lag` seconds have passed since the previous launch recorded there, writes
+## its own launch time and releases the lock. Consecutive launches are thereby
+## at least `lag` apart whichever worker they come from, and a launch long after
+## the previous one (e.g. sequential runs of real length) does not wait.
+##
+## Why: each DISPLACE run reads its whole input tree in the first seconds
+## (~7.5 s for the West Coast application on a local disk). Spacing launches
+## keeps those initial reads apart, which costs little and protects against
+## slow or flaky storage (network or synced folders) and the startup clash on
+## the shared "OutQueue" object of unpatched builds. dir.create() is atomic on
+## local filesystems, which is what makes this a lock.
+wait_for_launch_slot <- function(gate_dir, lag) {
+  lag <- as.numeric(lag)
+  if (is.na(lag) || lag <= 0) {
+    return(invisible(NA_real_))
+  }
+  dir.create(gate_dir, recursive = TRUE, showWarnings = FALSE)
+  lock <- file.path(gate_dir, "lock")
+  stamp <- file.path(gate_dir, "last_launch")
+  ## A holder never keeps the lock longer than `lag` plus a little, so an older
+  ## lock was left by a worker that died while holding it.
+  stale_after <- lag + 60
+  repeat {
+    if (dir.create(lock, showWarnings = FALSE)) break
+    age <- as.numeric(difftime(Sys.time(), file.mtime(lock), units = "secs"))
+    if (!is.na(age) && age > stale_after) {
+      unlink(lock, recursive = TRUE)
+      next
+    }
+    Sys.sleep(0.25)
+  }
+  on.exit(unlink(lock, recursive = TRUE), add = TRUE)
+
+  last <- if (file.exists(stamp)) {
+    suppressWarnings(as.numeric(readLines(stamp, n = 1L, warn = FALSE)))
+  } else NA_real_
+  if (length(last) == 1L && !is.na(last)) {
+    wait <- last + lag - as.numeric(Sys.time())
+    if (wait > 0) Sys.sleep(wait)
+  }
+  now <- as.numeric(Sys.time())
+  writeLines(format(now, digits = 15), stamp)
+  invisible(now)
 }

@@ -45,5 +45,10 @@ promises:
   can change the metier) all shift realised metier shares legitimately.
 
 Fished nodes come from the fishing pings (`state == 1`) of `vmslike`, matched
-to the nearest graph node, so the run needs `export_vmslike = 1`.
+to the nearest graph node, so the run needs `huge = TRUE` (DISPLACE writes
+`vmslike` only with `--huge=1`) and `export_vmslike = 10` (all years; `1`
+exports the first year only). Run with `sqlite = FALSE`: with SQLite output on,
+the simulator crashes during teardown before flushing the text files, which
+truncates `vmslike`. Without fishing pings the two ground/metier checks have
+nothing to check, and are reported as failed (`n_fail = NA`).
 }

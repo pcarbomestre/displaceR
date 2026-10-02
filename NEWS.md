@@ -21,6 +21,11 @@
   create the shared-memory object `OutQueue`, which only the desktop GUI uses
   and which could make DISPLACE runs started at the same moment abort with
   "File exists". Outputs are unchanged. See `docs/upstream-issues.md` 18.
+* `run_displace_campaign()` gains `start_lag` (default 15 s): parallel
+  workers launch replicates at least that far apart, through a small lock in
+  `output_dir/.displaceR-launch/`, so their initial reads of the input tree do
+  not coincide. A launch more than `start_lag` after the previous one does not
+  wait; `start_lag = 0` disables it.
 * Local installs of feature-patched builds get their own label
   (`1.8.0-96eadecb1980-grounds-by-port-local`) and record `feature_patches`.
 

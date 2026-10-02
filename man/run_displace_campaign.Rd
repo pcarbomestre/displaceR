@@ -13,7 +13,8 @@ run_displace_campaign(
   margin = 1000L,
   max_passes = 10L,
   map = NULL,
-  quiet = FALSE
+  quiet = FALSE,
+  start_lag = 15
 )
 }
 \arguments{
@@ -61,6 +62,14 @@ ever.}
   two and oversubscribes the machine.}
 
 \item{quiet}{Suppress progress messages.}
+
+\item{start_lag}{Minimum seconds between two replicate launches, enforced
+across parallel workers through a small lock in `output_dir`
+(`.displaceR-launch/`). Each run reads its whole input tree at start
+(about 7.5 s for the West Coast application on a local disk), so spacing
+launches keeps those reads apart. A launch only waits if the previous one
+was less than `start_lag` ago, so a campaign run one at a time is not
+delayed by runs of real length. `0` disables it.}
 }
 \value{
 A list with `runs` (named list of the last `displace_run` per
