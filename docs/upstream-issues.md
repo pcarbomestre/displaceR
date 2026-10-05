@@ -534,6 +534,49 @@ the member a `unique_ptr` created in `OutputQueueManager::start()` only for the
 Binary (GUI) protocol. Headless runs never touch the shared memory; outputs are
 byte-identical. Currently on branch `displace-grounds-by-port` only.
 
+## 19. Other landings erase the size groups they cannot catch -- **stock dynamics**
+
+Verified at `v1.8.0` (`96eadecb`). Each month `Node::apply_oth_land()`
+(`commons/Node.cpp`) removes the "other landings" (catch by the fleet that is
+not simulated, `popsspe_<app>/<pop>spe_stecf_oth_land_per_month_per_node_*.dat`)
+from every node that has some. It spreads the kilograms over size groups by
+available biomass = N x weight x selectivity
+(`metiersspe_<app>/metier_selectivity_per_stock_ogives_fleetsce<N>_for_oth_land.dat`).
+In the loop over size groups, a group with available biomass <= 1 kg falls into
+an `else` branch that sets its N on that node to **0** instead of leaving it
+unchanged. So every size group the other fleet does not select (selectivity 0,
+typically the small fish) is wiped on every node receiving other landings, every
+month, regardless of how much was meant to be landed.
+
+Two ways it shows up:
+
+- **Empty selectivity file:** the loader reads it into a zero-filled
+  nbpops x 14 matrix (not an empty one, so the hardcoded gadoid fallback in
+  `apply_oth_land()` is not used). Available biomass is 0 everywhere, the node
+  is skipped as a whole, and **no other landings are removed**, silently.
+  The westcoast case study ran like this until 2026-10 (its routine wrote the
+  file from a template metier name that does not exist).
+- **Real selectivity:** removals happen, but the zeroing above removes far more
+  than was landed. westcoast test application (60 vessels, 1 year, same seed):
+  biomass lost = 6.8x (sablefish) to 62x (longspine thornyhead) the other
+  landings.
+
+The vessel catch code has the same pattern (`Vessel.cpp`, `avail_biomass == 0`
+-> N = 0), but patching it left every output of the same test byte-identical
+(population totals are not rebuilt from it), so it is not patched.
+
+**How displaceR handles it:** opt-in patch `keep-unselected-othland`
+(`tools/patches/keep-unselected-othland.patch`, `--patch keep-unselected-othland`)
+keeps N unchanged in that branch. With it, other landings removed 98-99% of
+the input and biomass fell by 0.86-0.96x the landings (same test and seed,
+with and without `grounds-by-port`); vessel catches are unchanged. A build
+made with `tools/build-displace.sh` gives outputs byte-identical to the build
+these numbers come from. Currently on branch `displace-grounds-by-port` only.
+
+Comparing runs: DISPLACE seeds `rand()` with the first integer in the
+simulation name (`SimModel::initRandom()`), so only runs whose names start
+with the same number are comparable step by step.
+
 ---
 
 # The ask that would make most of this moot

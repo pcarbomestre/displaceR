@@ -21,6 +21,13 @@
   create the shared-memory object `OutQueue`, which only the desktop GUI uses
   and which could make DISPLACE runs started at the same moment abort with
   "File exists". Outputs are unchanged. See `docs/upstream-issues.md` 18.
+* Third opt-in patch, `--patch keep-unselected-othland`: DISPLACE's
+  other-landings step set to zero every size group with 1 kg or less available
+  on a node (e.g. sizes the other fleet does not select), wiping them monthly;
+  the patch leaves them unchanged. Needed whenever other landings and their
+  selectivity file are used. See `docs/upstream-issues.md` 19.
+* `docs/displace-patches.md` summarises every change this branch makes to
+  DISPLACE v1.8.0 and how to build with them.
 * `run_displace_campaign()` gains `start_lag` (default 15 s): parallel
   workers launch replicates at least that far apart, through a small lock in
   `output_dir/.displaceR-launch/`, so their initial reads of the input tree do

@@ -24,9 +24,10 @@
 #                           [--patch NAME]...
 #
 # --patch NAME applies the opt-in patch tools/patches/NAME.patch (e.g.
-# headless-ipc-lazy, or
+# headless-ipc-lazy, keep-unselected-othland, or
 # grounds-by-port, see docs/grounds-by-port-spec.md) before the build-time
-# patches. Without it the build is plain upstream, as released.
+# patches. Without it the build is plain upstream, as released. All feature
+# patches are listed in docs/displace-patches.md.
 #
 # Produces $OUTDIR/payload/ with RPATH=$ORIGIN, plus $OUTDIR/build-info.json.
 # The payload holds the displace binary, the DISPLACE shared libraries, and (on
