@@ -60,6 +60,15 @@
   written. Checked against the westcoast graph 2 (wind lease areas at weight
   500): all 36 closure files are byte-identical and every penalised weight
   matches.
+* `write_displace_graph(node_files = TRUE)` also writes the per-node files the
+  simulator refuses to start without: `code_area_for_graph<N>_points.dat` and
+  the 13 required `coord<N>_with_<layer>.dat` layers, with the editor GUI's
+  defaults (0 everywhere; the two benthos layers 1 on harbour nodes).
+  `layers = list(<layer> = values)` supplies real values for any layer. The
+  `code_area` file now holds the node coordinates in its two ignored blocks,
+  as the GUI writes them, instead of zeros (the simulator reads the same
+  codes). From the westcoast June graph extent, all 3 `code_area` files and
+  39 layers come out byte-identical to the GUI's.
 * The output goes straight into `write_displace_graph()`. See
   `docs/graph-builder.md` for how the port differs from the GUI and why it is
   a port rather than a compiled upstream tool.

@@ -9,7 +9,9 @@ write_displace_graph(
   input_dir,
   a_graph = NULL,
   code_area = NULL,
-  digits = NULL
+  digits = NULL,
+  node_files = FALSE,
+  layers = NULL
 )
 }
 \arguments{
@@ -21,9 +23,9 @@ frames using the same column names [read_displace_graph()] returns.}
 \item{a_graph}{Graph number. Defaults to the graph's own.}
 
 \item{code_area}{Optional integer vector of area codes, one per node. When
-given, `code_area_for_graph<N>_points.dat` is written too. The simulator
-reads and discards the first two blocks of that file, so they are filled
-with zeros.}
+given (or with `node_files = TRUE`), `code_area_for_graph<N>_points.dat`
+is written too: node longitudes, latitudes, then the codes, as the editor
+GUI writes it. The simulator reads only the codes.}
 
 \item{digits}{Significant digits for coordinates and edge weights. `NULL`
 (the default) writes every digit R holds. `6` gives the editor GUI's
@@ -31,6 +33,17 @@ number format, because Qt's `QTextStream` prints doubles with 6
 significant digits. A GUI-built coord file is then reproduced byte for
 byte. At 6 digits a longitude like -125.857 is only resolved to about
 100 m.}
+
+\item{node_files}{If `TRUE`, also writes the per-node files the simulator
+refuses to start without: `code_area_for_graph<N>_points.dat` (codes 0
+unless `code_area` is given) and the 13 required
+`coord<N>_with_<layer>.dat` layers (see Details). Default `FALSE`.}
+
+\item{layers}{Optional named list of per-node values, one vector per layer,
+named as in Details (e.g. `list(bathymetry = depths)`); each must have
+one value per node. With `node_files = TRUE` they replace the defaults;
+on their own, only these layers are written. `icesrectanglecode`, the one
+optional layer, is written only when given here.}
 }
 \value{
 The paths written, invisibly.
@@ -38,6 +51,16 @@ The paths written, invisibly.
 \description{
 Emits `coord<N>.dat` and `graph<N>.dat` in the column-stacked layout the
 simulator expects.
+}
+\details{
+The per-node layers are `landscape`, `wind`, `sst`, `salinity`,
+  `nitrogen`, `phosphorus`, `oxygen`, `dissolvedcarbon`, `bathymetry`,
+  `shippingdensity`, `siltfraction`, `benthos_total_biomass` and
+  `benthos_total_number` (plus the optional `icesrectanglecode`), one value
+  per node. The defaults written by `node_files = TRUE` are those of the
+  editor GUI's files: 0 everywhere, except the two benthos layers, which
+  are 1 on harbour nodes. They are placeholders that only matter when the
+  environmental or benthos options of a scenario use them.
 }
 \examples{
 g <- list(

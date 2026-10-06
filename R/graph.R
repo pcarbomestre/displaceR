@@ -90,8 +90,11 @@ graphsspe_file <- function(input_dir, a_graph, what) {
     coord = sprintf("coord%d.dat", a_graph),
     graph = sprintf("graph%d.dat", a_graph),
     code_area = sprintf("code_area_for_graph%d_points.dat", a_graph),
-    landscape = sprintf("coord%d_with_landscape.dat", a_graph),
-    stopf("unknown graphsspe file kind: %s", what)
+    if (what %in% PER_NODE_LAYERS) {
+      sprintf("coord%d_with_%s.dat", a_graph, what)
+    } else {
+      stopf("unknown graphsspe file kind: %s", what)
+    }
   ))
 }
 
@@ -192,9 +195,27 @@ read_displace_graph <- function(input_dir,
 #' @param input_dir Folder to write `graphsspe/` into.
 #' @param a_graph Graph number. Defaults to the graph's own.
 #' @param code_area Optional integer vector of area codes, one per node. When
-#'   given, `code_area_for_graph<N>_points.dat` is written too. The simulator
-#'   reads and discards the first two blocks of that file, so they are filled
-#'   with zeros.
+#'   given (or with `node_files = TRUE`), `code_area_for_graph<N>_points.dat`
+#'   is written too: node longitudes, latitudes, then the codes, as the editor
+#'   GUI writes it. The simulator reads only the codes.
+#' @param node_files If `TRUE`, also writes the per-node files the simulator
+#'   refuses to start without: `code_area_for_graph<N>_points.dat` (codes 0
+#'   unless `code_area` is given) and the 13 required
+#'   `coord<N>_with_<layer>.dat` layers (see Details). Default `FALSE`.
+#' @param layers Optional named list of per-node values, one vector per layer,
+#'   named as in Details (e.g. `list(bathymetry = depths)`); each must have
+#'   one value per node. With `node_files = TRUE` they replace the defaults;
+#'   on their own, only these layers are written. `icesrectanglecode`, the one
+#'   optional layer, is written only when given here.
+#'
+#' @details The per-node layers are `landscape`, `wind`, `sst`, `salinity`,
+#'   `nitrogen`, `phosphorus`, `oxygen`, `dissolvedcarbon`, `bathymetry`,
+#'   `shippingdensity`, `siltfraction`, `benthos_total_biomass` and
+#'   `benthos_total_number` (plus the optional `icesrectanglecode`), one value
+#'   per node. The defaults written by `node_files = TRUE` are those of the
+#'   editor GUI's files: 0 everywhere, except the two benthos layers, which
+#'   are 1 on harbour nodes. They are placeholders that only matter when the
+#'   environmental or benthos options of a scenario use them.
 #' @param digits Significant digits for coordinates and edge weights. `NULL`
 #'   (the default) writes every digit R holds. `6` gives the editor GUI's
 #'   number format, because Qt's `QTextStream` prints doubles with 6
@@ -212,7 +233,8 @@ read_displace_graph <- function(input_dir,
 #' )
 #' write_displace_graph(g, tempdir(), a_graph = 1)
 write_displace_graph <- function(graph, input_dir, a_graph = NULL,
-                                 code_area = NULL, digits = NULL) {
+                                 code_area = NULL, digits = NULL,
+                                 node_files = FALSE, layers = NULL) {
   nodes <- graph$nodes
   edges <- graph$edges
   a_graph <- a_graph %||% graph$a_graph %||%
@@ -252,20 +274,60 @@ write_displace_graph <- function(graph, input_dir, a_graph = NULL,
     )
   }
 
+  if (isTRUE(node_files) && is.null(code_area)) {
+    code_area <- rep(0L, nrow(nodes))
+  }
   if (!is.null(code_area)) {
     if (length(code_area) != nrow(nodes)) {
       stopf("code_area has length %d but there are %d nodes",
             length(code_area), nrow(nodes))
     }
-    ## fill_from_code_area() reads three blocks and uses only the third.
-    filler <- rep(0L, nrow(nodes))
+    ## fill_from_code_area() reads three blocks and uses only the third. The
+    ## first two hold the node coordinates, as the editor GUI writes them.
     paths["code_area"] <- write_stacked(
       graphsspe_file(input_dir, a_graph, "code_area"),
-      list(ignored1 = filler, ignored2 = filler, code = as.integer(code_area))
+      list(lon = nodes$lon, lat = nodes$lat, code = as.integer(code_area)),
+      digits = digits
     )
   }
 
+  if (!is.null(layers) &&
+      (!is.list(layers) || is.null(names(layers)) || any(!nzchar(names(layers))))) {
+    stopf("layers must be a named list, e.g. list(bathymetry = depths)")
+  }
+  unknown <- setdiff(names(layers), PER_NODE_LAYERS)
+  if (length(unknown) > 0L) {
+    stopf("unknown layer(s): %s. Known layers: %s",
+          paste(unknown, collapse = ", "), paste(PER_NODE_LAYERS, collapse = ", "))
+  }
+  to_write <- if (isTRUE(node_files)) {
+    union(setdiff(PER_NODE_LAYERS, "icesrectanglecode"), names(layers))
+  } else {
+    names(layers)
+  }
+  for (layer in to_write) {
+    values <- layers[[layer]] %||% default_node_layer(layer, nodes)
+    if (length(values) != nrow(nodes)) {
+      stopf("layer '%s' has %d values but there are %d nodes",
+            layer, length(values), nrow(nodes))
+    }
+    path <- graphsspe_file(input_dir, a_graph, layer)
+    dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    writeLines(fmt_num(values), path)
+    paths[layer] <- path
+  }
+
   invisible(paths)
+}
+
+## Default values of a per-node layer, as in the editor GUI's files: 0 on
+## every node, except the benthos layers, 1 on harbour nodes.
+default_node_layer <- function(layer, nodes) {
+  if (layer %in% c("benthos_total_biomass", "benthos_total_number")) {
+    as.integer(nodes$harbour != 0)
+  } else {
+    rep(0L, nrow(nodes))
+  }
 }
 
 #' Read the per-node area codes
