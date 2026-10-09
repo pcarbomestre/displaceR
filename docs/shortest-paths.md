@@ -110,6 +110,32 @@ an area in transit. Upstream A* does, because its search order ignores weights
 in practice. So with `shortest_paths` the penalty works as intended. Fishing
 inside the areas is still possible unless `area_monthly_closure` is on.
 
+### Test: closures on, A* vs shortest paths (2026-10-09)
+
+Calibration 4.0, 2200 steps, simu1, all eight patches; `area_monthly_closure`
+added to the scenario. Every `vmslike` position tested against the five
+lease-area polygons (`DISPLACE-westcoast-analysis/data/lease_areas/ca_lease_areas_2024`);
+all 117 closed nodes lie inside them. State 1 = fishing, 2 = steaming.
+
+| scenario | positions inside lease areas | fishing | steaming | trips |
+|---|---|---|---|---|
+| A*, no closures | 153 | 129 | 24 | 11 |
+| shortest paths, no closures | 140 | 128 | 12 | 8 |
+| A*, closures on | 8 | 0 | 8 | 7 |
+| shortest paths, closures on | **0** | 0 | 0 | 0 |
+
+Closures stop fishing inside; only `shortest_paths` also stops transit through.
+Positions are hourly, so a crossing shorter than an hour could fall between two
+records; the offline path check above covers that case (no Dijkstra path
+crosses a lease area unless it starts or ends inside one).
+
+**Gap in the closure files:** `vsize_closure_a_graph2_month*.dat` close sizes
+0, 1, 2 and 4 but not 3 (24-40 m), and DISPLACE treats a ground as closed only
+when metier, size and nation are all banned. Calibration 4.0 has 3 vessels of
+24-40 m, so those can still choose grounds inside the lease areas with closures
+on (none did in this run). Regenerate with `vessel_sizes = 0:4` if all vessels
+should be excluded.
+
 ## Before adopting it
 
 - The calibrations so far (effort, CPUE, fuel and trip-duration targets) were
