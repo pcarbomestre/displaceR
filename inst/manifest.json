@@ -42,6 +42,70 @@
   },
   "default": "1.8.0-96eadecb",
   "versions": {
+    "1.8.0-96eadecb-westcoast": {
+      "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
+      "upstream_ref": "v1.8.0",
+      "displace_version": "1.8.0",
+      "displace_build": "0",
+      "released": "2026-10-09",
+      "feature_patches": "grounds-by-port headless-ipc-lazy keep-unselected-othland out-of-range-implicit astar-speedup sample-table-cache shortest-paths",
+      "note": [
+        "Upstream v1.8.0 plus the displaceR feature patches used by the westcoast",
+        "analysis (docs/displace-patches.md). astar-speedup and sample-table-cache",
+        "change no output (verified byte for byte on macOS and on sequoia) and make a",
+        "run ~10-15x faster. grounds-by-port, out-of-range-implicit and shortest-paths",
+        "act only when the scenario sets their dyn_alloc option; keep-unselected-othland",
+        "changes results whenever other landings are used.",
+        "Same results as the earlier local westcoast builds, only faster."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast/displace-96eadecb1980-linux-x86_64-glibc2.39-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths.tar.gz",
+          "sha256": "a4fcd36bc0d8191f7d740ade859b360711985ba763b6ca7b78f637de67ff0fa7",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast/displace-96eadecb1980-macos-arm64-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths.tar.gz",
+          "sha256": "c35500aae59b96147ba11a5f501fe3fb5077c1252c9c9c16608798007beb2d7f",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
+    "1.8.0-96eadecb-westcoast-repro": {
+      "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
+      "upstream_ref": "v1.8.0",
+      "displace_version": "1.8.0",
+      "displace_build": "0",
+      "released": "2026-10-09",
+      "feature_patches": "grounds-by-port headless-ipc-lazy keep-unselected-othland out-of-range-implicit astar-speedup sample-table-cache shortest-paths reproducible-diffusion",
+      "note": [
+        "Upstream v1.8.0 plus the displaceR feature patches used by the westcoast",
+        "analysis (docs/displace-patches.md). astar-speedup and sample-table-cache",
+        "change no output (verified byte for byte on macOS and on sequoia) and make a",
+        "run ~10-15x faster. grounds-by-port, out-of-range-implicit and shortest-paths",
+        "act only when the scenario sets their dyn_alloc option; keep-unselected-othland",
+        "changes results whenever other landings are used.",
+        "Plus reproducible-diffusion: diffusePopN draws follow the simulation",
+        "name, so two runs with the same name repeat (except upstream issue 20).",
+        "Results differ from builds without it whenever diffusePopN is used."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast-repro/displace-96eadecb1980-linux-x86_64-glibc2.39-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths+reproducible-diffusion.tar.gz",
+          "sha256": "63080cfd65301736df8f0a135c24c95588c8317c1bb50c189c6832dcf0ac4cc6",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast-repro/displace-96eadecb1980-macos-arm64-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths+reproducible-diffusion.tar.gz",
+          "sha256": "6b0088cbe621bf2bc96290a93364a21724ad2ad636d074ce8a9c57b1ac8b95c7",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
     "1.8.0-96eadecb": {
       "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
       "upstream_ref": "v1.8.0",
