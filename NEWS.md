@@ -1,6 +1,18 @@
-# displaceR 0.1.0.9000
+# displaceR 0.1.0.9001
 
-## Port-tagged fishing grounds (`grounds-by-port` feature patch, branch only)
+* Two new DISPLACE builds in the manifest, published as pre-releases (Linux
+  glibc 2.39 and macOS arm64), alongside the unchanged default:
+  - `install_displace("1.8.0-96eadecb-westcoast")`: v1.8.0 with
+    `grounds-by-port`, `headless-ipc-lazy`, `keep-unselected-othland`,
+    `out-of-range-implicit`, `astar-speedup`, `sample-table-cache` and
+    `shortest-paths`. Same results as the earlier local westcoast builds,
+    ~10-15x faster.
+  - `install_displace("1.8.0-96eadecb-westcoast-repro")`: the same plus
+    `reproducible-diffusion`, so runs with the same simulation name repeat.
+
+# displaceR 0.1.0.9000 (development, before the westcoast builds)
+
+## Port-tagged fishing grounds (`grounds-by-port` feature patch)
 
 * `tools/build-displace.sh --patch grounds-by-port` builds DISPLACE v1.8.0 with
   `tools/patches/grounds-by-port.patch`: a new `dyn_alloc_sce` option
