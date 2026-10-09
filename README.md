@@ -123,7 +123,8 @@ directory under the cache, keyed by its label.
 
 ```r
 displace_versions()                       # what the manifest can install
-install_displace()                        # the pinned default (1.8.0)
+install_displace()                        # the pinned default: 1.8.0 + westcoast patches (-repro)
+install_displace("1.8.0-96eadecb")        # plain upstream 1.8.0 (also for Windows)
 install_displace("1.6.6-7f2656fb-beta2")  # the previous version
 displace_installed()                      # what is on this machine
 
@@ -134,8 +135,11 @@ run_displace(..., binary = displace_path("1.6.6-7f2656fb-beta2"))
 The default is pinned for reproducibility and moves only deliberately. Do not
 switch versions in the middle of a set of replicates: DISPLACE 1.7.0–1.8.0
 changed N depletion, the cpue multiplier, area closures and TAC logic, so
-results from 1.6.6 and 1.8.0 are not comparable. The label to cite is the
-upstream commit that `displace_version()` reports.
+results from 1.6.6 and 1.8.0 are not comparable. Nor are runs from the plain
+1.8.0 build and the default westcoast build, which adds model-changing patches
+(`displace_features()` lists them; see `docs/displace-patches.md`). The label to
+cite is the upstream commit that `displace_version()` reports, plus the patch
+list.
 
 `install_displace()` writes to `tools::R_user_dir("displaceR", "cache")`. Point
 `DISPLACER_CACHE` somewhere shared if several users on a server should share one
