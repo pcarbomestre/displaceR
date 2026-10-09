@@ -577,6 +577,41 @@ Comparing runs: DISPLACE seeds `rand()` with the first integer in the
 simulation name (`SimModel::initRandom()`), so only runs whose names start
 with the same number are comparable step by step.
 
+## 20. Year-end `fbar_type1` is not reproducible, even with `reproducible-diffusion`
+
+Verified at `v1.8.0` (`96eadecb`) on sequoia (Linux x86_64, CI builds from
+ubuntu-24.04). Six 1-year runs (8762 steps) of westcoast calibration 4.0,
+`baseline`, `simu1`, production output settings, all with
+`reproducible-diffusion`: two of the reference build, three of the fast build
+(`astar-speedup` + `sample-table-cache`) and one of the fast build with every
+speedup switched off by its environment variables. In every pair of runs, 37
+of 38 text outputs (`memstats_*` excluded) are byte-identical and
+`popdyn_annual_indic_simu1.dat` differs by one byte at most: column 5
+(`fbar_type1`) of population 0 in the year-end row (tstep 8761) printed `0.0205`
+in two runs (one reference, one fast) and `0.0206` in four (one reference, three
+fast). Each build produced both values, so the variation comes from DISPLACE
+itself, not from a patch.
+
+`fbar_type1` is the mean over ages of `tot_F_at_age_running_average`
+(`Population::compute_fbar()`), the "perceived" F updated monthly in
+`Population::compute_tot_N_and_F_and_W_at_age()`. Everything it is computed
+from (N at size group, the age keys) is printed identically in every run, as
+are F, N, W and M at age, landings and SSB in the same row, and `fbar_type2`
+next to it. So the underlying difference is almost certainly in the last bits,
+with the value sitting on the 4-decimal rounding boundary (~0.02055). Source
+not found. The arithmetic shown is deterministic; `compute_fbar()` also adds
+to `fbar_type1` without resetting it first, so the value carries over from
+earlier calls. Note that the 3-month runs (2200 steps) never reach a year end
+and showed no difference.
+
+**Why it matters:** in this scenario it does not feed back into anything (all
+other outputs identical over a full year). A scenario whose management rule
+reads `fbar_type1` (TAC or tariff HCRs in `simulator/fisheriesmanagmt.cpp`)
+could act on it, though only when the value is at a rounding-level boundary.
+For build comparisons (`tools/compare-displace-builds.sh`), a difference
+confined to this one value at a year end is this issue, not a build effect;
+confirm by repeating the run with the same build.
+
 ---
 
 # The ask that would make most of this moot

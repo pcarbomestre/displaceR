@@ -3,7 +3,8 @@
 Branch `displace-speedup` (from `displace-grounds-by-port` at `9b14ee0`).
 
 Summary: `astar-speedup` + `sample-table-cache` make a single westcoast run
-~9-13x faster on macOS arm64 with byte-identical outputs (details below).
+~9-13x faster on macOS arm64 and ~11-15x on Linux (sequoia) with
+byte-identical outputs (details below).
 
 Ground rules for this work:
 
@@ -203,9 +204,42 @@ paths; 11.1 ms vs 5.2 ms per search.
 
 Unpatched rate measured from the user's own 3-year calibration runs on the same
 Mac: ~0.22 s/step, i.e. ~6.8 h per 13-year run. With all speedups: ~0.015
-s/step at 6 months (falling as the cache warms), i.e. ~25-35 min. Not yet
-measured on sequoia (different CPU and compiler); the ratio should carry over
-because the gains come from skipped work, but confirm with one timed run there.
+s/step at 6 months (falling as the cache warms), i.e. ~25-35 min. On sequoia
+(next section) the measured 1-year rates are 0.326 s/step (reference) and
+0.022 s/step (fast), i.e. ~10.3 h vs at most ~42 min per 13-year run, less if
+the path cache keeps warming.
+
+### Linux verification on sequoia (2026-10-09)
+
+The CI artifacts themselves, not local builds: reference from run 37987426759
+(`grounds-by-port headless-ipc-lazy keep-unselected-othland
+out-of-range-implicit reproducible-diffusion`), fast from run 37987436269 (the
+same plus `astar-speedup sample-table-cache`), both upstream `96eadecb`
+(v1.8.0), built on ubuntu-24.04, glibc 2.39. sha256 verified, patch lists
+checked in `build-info.json`. Sequoia: AMD EPYC 9654 (KVM guest), Ubuntu glibc
+2.39. Run with `tools/compare-displace-builds.sh` as Slurm jobs (partition
+`emlab_nodes`, 2 cores, both builds in parallel, single-threaded each) on
+westcoast calibration 4.0, real `baseline` scenario, production output
+settings.
+
+| Run | reference | fast | ratio | outputs |
+|---|---|---|---|---|
+| simu1, 2200 steps | 706 s | 65 s | 10.9x | 38/38 identical |
+| simu3, 2200 steps | 660 s | 62 s | 10.6x | 38/38 identical |
+| simu1, 8762 steps (1 year) | 2859 s | 195 s | 14.7x | 37/38, see below |
+
+All exits 0, all runs reach the last step. The 1-year difference is a single
+byte, `fbar_type1` at the year end in `popdyn_annual_indic_simu1.dat`, and it
+is not caused by the patches: four more 1-year runs (fast twice, reference once,
+fast with all four speedups off via `DISPLACE_ASTAR_NAN_SHORTCUT=0
+DISPLACE_ASTAR_CACHE_MB=0 DISPLACE_ASTAR_COMPACT=0 DISPLACE_SAMPLE_CACHE_MB=0`)
+show both builds producing both values, and a fast run byte-identical to the
+first reference run in all 38 files. See `docs/upstream-issues.md` 20. Repeat
+timings: fast 192 s (x2), reference 2804 s, fast with speedups off 2785 s
+(four runs in parallel).
+
+The ratio grows with run length here as on macOS (path cache warming). Single
+fast run of 3 months: 65 s on sequoia vs 40.5 s alone on the Mac.
 
 ## Profile after all speedups (4.0, 2200 steps, alone, 40.5 s)
 
