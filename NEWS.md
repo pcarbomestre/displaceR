@@ -1,3 +1,13 @@
+# displaceR 0.1.0.9002
+
+* The manifest default is now `1.8.0-96eadecb-westcoast-repro`, so a bare
+  `install_displace()` installs v1.8.0 with the westcoast feature patches, the
+  speed patches and `reproducible-diffusion`. It is published for Linux
+  (glibc >= 2.39) and macOS arm64 only; elsewhere (Windows, glibc 2.35, Intel
+  macOS) install the plain build by name: `install_displace("1.8.0-96eadecb")`.
+  Results differ from the previous default: `keep-unselected-othland` and
+  `reproducible-diffusion` change model behaviour (see docs/displace-patches.md).
+
 # displaceR 0.1.0.9001
 
 * Two new DISPLACE builds in the manifest, published as pre-releases (Linux

@@ -40,7 +40,7 @@
       }
     }
   },
-  "default": "1.8.0-96eadecb",
+  "default": "1.8.0-96eadecb-westcoast-repro",
   "versions": {
     "1.8.0-96eadecb-westcoast": {
       "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
