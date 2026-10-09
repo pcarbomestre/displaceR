@@ -411,7 +411,8 @@ displace_features <- function(binary = NULL) {
 ## simulator ignores option names it does not know, so without this check such
 ## a scenario runs as plain baseline on an unpatched binary, silently.
 FEATURE_OPTIONS <- c(grounds_by_port = "grounds-by-port",
-                     out_of_range_implicit = "out-of-range-implicit")
+                     out_of_range_implicit = "out-of-range-implicit",
+                     shortest_paths = "shortest-paths")
 
 check_binary_features <- function(binary, input_dir, input_name, scenario) {
   path <- simusspe_file(input_dir, input_name, paste0(scenario, ".dat"))
