@@ -410,7 +410,8 @@ displace_features <- function(binary = NULL) {
 ## dyn_alloc_sce options that only a feature-patched build understands. The
 ## simulator ignores option names it does not know, so without this check such
 ## a scenario runs as plain baseline on an unpatched binary, silently.
-FEATURE_OPTIONS <- c(grounds_by_port = "grounds-by-port")
+FEATURE_OPTIONS <- c(grounds_by_port = "grounds-by-port",
+                     out_of_range_implicit = "out-of-range-implicit")
 
 check_binary_features <- function(binary, input_dir, input_name, scenario) {
   path <- simusspe_file(input_dir, input_name, paste0(scenario, ".dat"))
