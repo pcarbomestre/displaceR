@@ -38,7 +38,7 @@
   by `std::random_device`, so two runs with the same simulation name differed.
   It is now seeded from the name like everything else. Changes results relative
   to earlier runs, once.
-* Experimental `--patch shortest-paths` (branch `displace-shortest-paths`): with
+* Opt-in `--patch shortest-paths`: with
   the scenario option `shortest_paths`, vessels follow exact shortest paths
   (Dijkstra) instead of upstream's A*. Changes results when switched on (about
   20% shorter trips on the westcoast calibrations); byte-identical when off. See

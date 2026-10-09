@@ -1,9 +1,11 @@
 # Exact shortest paths for vessels (`shortest-paths` patch)
 
-Branch `displace-shortest-paths` (from `displace-grounds-by-port` at `f80e104`).
-Experimental: this patch **changes model results** when switched on, and whether
-to use it is a modelling decision. It is kept on its own branch until that
-decision is made.
+Developed on branch `displace-shortest-paths` and merged into
+`displace-grounds-by-port` (2026-10-09) after a green Linux CI build with all
+eight patches. Opt-in twice over: the build needs `--patch shortest-paths` and a
+scenario needs the option `shortest_paths`; without the option a patched build is
+byte-identical to an unpatched one. Switching it on **changes model results**,
+and whether to do so is a modelling decision (see "Before adopting it").
 
 ## The problem
 
@@ -145,6 +147,5 @@ should be excluded.
 - Suggested evaluation: a few replicates per scenario, a year or more, comparing
   trip duration, distance, fuel and the spatial distribution of effort against
   the observed VMS/logbook data, with and without the option.
-- If adopted, merge this branch into `displace-grounds-by-port` and add
-  `shortest-paths` to the build's patch list; the option still has to be set per
-  scenario.
+- To use it, build with `--patch shortest-paths` (it is in the CI build of all
+  eight patches) and add `shortest_paths` to the scenario.
