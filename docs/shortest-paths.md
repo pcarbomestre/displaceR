@@ -83,6 +83,33 @@ trip-level means are meaningful but totals such as landings need several
 replicates before reading anything into them. Run time also drops (40 s -> 22 s
 for these runs) because the Dijkstra search is cheaper than the A* it replaces.
 
+## Closures and the lease-area penalty
+
+Closures (`metier_`, `nation_`, `vsize_closure_a_graph<N>_month*.dat`, active
+with `area_monthly_closure`) are only checked when a vessel chooses where to
+fish (`choose_a_ground_and_go_fishing`, `choose_another_ground_and_go_fishing`,
+`should_i_choose_this_ground`, `maybe_close_ground`,
+`which_metier_should_i_go_for`). The navigation graph is fixed after loading,
+so neither path finder routes around closed nodes; that is unchanged here.
+
+What does steer routes is the edge-weight penalty that `add_displace_closure()`
+writes into `graph<N>.dat` (graph 2: 758 lease-area edges at +500 km, 102 at
++1000). Travelled distance, steaming time and fuel are computed from node
+coordinates (`dist()` in `Vessel.cpp`), not edge weights, so the penalty only
+affects route choice. 1,500 random harbour <-> node paths on the calibration
+4.0 graph:
+
+| | paths crossing a penalised edge | crossings |
+|---|---|---|
+| upstream A* | 27 (1.8%) | 111 |
+| `shortest_paths` | 15 (1.0%) | 24 |
+
+All 15 Dijkstra cases start or end at a node inside a lease area (every edge
+at that node penalised), where crossing is unavoidable; no Dijkstra path crosses
+an area in transit. Upstream A* does, because its search order ignores weights
+in practice. So with `shortest_paths` the penalty works as intended. Fishing
+inside the areas is still possible unless `area_monthly_closure` is on.
+
 ## Before adopting it
 
 - The calibrations so far (effort, CPUE, fuel and trip-duration targets) were
