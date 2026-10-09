@@ -515,6 +515,105 @@ A* stops by throwing from the goal visitor; they are caught.
 
 ---
 
+## 18. Headless runs create shared memory, and simultaneous starts can abort
+
+Verified at `v1.8.0` (`96eadecb`). The global `OutputQueueManager mOutQueue`
+(`simulator/ipc.cpp`) holds an `IpcQueue` by value. Constructing one opens, or
+if absent creates, the machine-wide boost::interprocess shared memory
+`"OutQueue"` (`commons/ipcqueue.cpp`), at static initialisation, so every run
+does it, headless or not, although only `--use-gui` ever uses it. Two
+processes starting together can both miss the open and race on the create;
+the loser aborts with `interprocess_exception: File exists` (exit 134, no
+steps run). Seen 7 of 8 times in one round of simultaneous starts, otherwise
+rare. Backed by `/tmp/boost_interprocess/` on macOS and `/dev/shm/OutQueue` on
+Linux, so all users of a machine share the one name.
+
+**How displaceR handles it:** opt-in patch `headless-ipc-lazy`
+(`tools/patches/headless-ipc-lazy.patch`, `--patch headless-ipc-lazy`) makes
+the member a `unique_ptr` created in `OutputQueueManager::start()` only for the
+Binary (GUI) protocol. Headless runs never touch the shared memory; outputs are
+byte-identical. Currently on branch `displace-grounds-by-port` only.
+
+## 19. Other landings erase the size groups they cannot catch -- **stock dynamics**
+
+Verified at `v1.8.0` (`96eadecb`). Each month `Node::apply_oth_land()`
+(`commons/Node.cpp`) removes the "other landings" (catch by the fleet that is
+not simulated, `popsspe_<app>/<pop>spe_stecf_oth_land_per_month_per_node_*.dat`)
+from every node that has some. It spreads the kilograms over size groups by
+available biomass = N x weight x selectivity
+(`metiersspe_<app>/metier_selectivity_per_stock_ogives_fleetsce<N>_for_oth_land.dat`).
+In the loop over size groups, a group with available biomass <= 1 kg falls into
+an `else` branch that sets its N on that node to **0** instead of leaving it
+unchanged. So every size group the other fleet does not select (selectivity 0,
+typically the small fish) is wiped on every node receiving other landings, every
+month, regardless of how much was meant to be landed.
+
+Two ways it shows up:
+
+- **Empty selectivity file:** the loader reads it into a zero-filled
+  nbpops x 14 matrix (not an empty one, so the hardcoded gadoid fallback in
+  `apply_oth_land()` is not used). Available biomass is 0 everywhere, the node
+  is skipped as a whole, and **no other landings are removed**, silently.
+  The westcoast case study ran like this until 2026-10 (its routine wrote the
+  file from a template metier name that does not exist).
+- **Real selectivity:** removals happen, but the zeroing above removes far more
+  than was landed. westcoast test application (60 vessels, 1 year, same seed):
+  biomass lost = 6.8x (sablefish) to 62x (longspine thornyhead) the other
+  landings.
+
+The vessel catch code has the same pattern (`Vessel.cpp`, `avail_biomass == 0`
+-> N = 0), but patching it left every output of the same test byte-identical
+(population totals are not rebuilt from it), so it is not patched.
+
+**How displaceR handles it:** opt-in patch `keep-unselected-othland`
+(`tools/patches/keep-unselected-othland.patch`, `--patch keep-unselected-othland`)
+keeps N unchanged in that branch. With it, other landings removed 98-99% of
+the input and biomass fell by 0.86-0.96x the landings (same test and seed,
+with and without `grounds-by-port`); vessel catches are unchanged. A build
+made with `tools/build-displace.sh` gives outputs byte-identical to the build
+these numbers come from. Currently on branch `displace-grounds-by-port` only.
+
+Comparing runs: DISPLACE seeds `rand()` with the first integer in the
+simulation name (`SimModel::initRandom()`), so only runs whose names start
+with the same number are comparable step by step.
+
+## 20. Year-end `fbar_type1` is not reproducible, even with `reproducible-diffusion`
+
+Verified at `v1.8.0` (`96eadecb`) on sequoia (Linux x86_64, CI builds from
+ubuntu-24.04). Six 1-year runs (8762 steps) of westcoast calibration 4.0,
+`baseline`, `simu1`, production output settings, all with
+`reproducible-diffusion`: two of the reference build, three of the fast build
+(`astar-speedup` + `sample-table-cache`) and one of the fast build with every
+speedup switched off by its environment variables. In every pair of runs, 37
+of 38 text outputs (`memstats_*` excluded) are byte-identical and
+`popdyn_annual_indic_simu1.dat` differs by one byte at most: column 5
+(`fbar_type1`) of population 0 in the year-end row (tstep 8761) printed `0.0205`
+in two runs (one reference, one fast) and `0.0206` in four (one reference, three
+fast). Each build produced both values, so the variation comes from DISPLACE
+itself, not from a patch.
+
+`fbar_type1` is the mean over ages of `tot_F_at_age_running_average`
+(`Population::compute_fbar()`), the "perceived" F updated monthly in
+`Population::compute_tot_N_and_F_and_W_at_age()`. Everything it is computed
+from (N at size group, the age keys) is printed identically in every run, as
+are F, N, W and M at age, landings and SSB in the same row, and `fbar_type2`
+next to it. So the underlying difference is almost certainly in the last bits,
+with the value sitting on the 4-decimal rounding boundary (~0.02055). Source
+not found. The arithmetic shown is deterministic; `compute_fbar()` also adds
+to `fbar_type1` without resetting it first, so the value carries over from
+earlier calls. Note that the 3-month runs (2200 steps) never reach a year end
+and showed no difference.
+
+**Why it matters:** in this scenario it does not feed back into anything (all
+other outputs identical over a full year). A scenario whose management rule
+reads `fbar_type1` (TAC or tariff HCRs in `simulator/fisheriesmanagmt.cpp`)
+could act on it, though only when the value is at a rounding-level boundary.
+For build comparisons (`tools/compare-displace-builds.sh`), a difference
+confined to this one value at a year end is this issue, not a build effect;
+confirm by repeating the run with the same build.
+
+---
+
 # The ask that would make most of this moot
 
 Every issue above is downstream of one fact: **there are no official headless

@@ -8,6 +8,7 @@ displace_output_spec(
   type,
   nbpops = NULL,
   explicit_pops = NULL,
+  grounds_by_port = FALSE,
   db_version = NULL
 )
 }
@@ -19,6 +20,10 @@ variable-width layouts.}
 
 \item{explicit_pops}{Zero-based ids of the explicitly modelled populations,
 i.e. `setdiff(0:(nbpops-1), implicit_pops)`. Required for `loglike`.}
+
+\item{grounds_by_port}{For `loglike`: append the `trip_port` and `dep_port`
+columns that a `grounds-by-port` build writes when the scenario enables
+the `grounds_by_port` option (see [check_grounds_by_port()]).}
 
 \item{db_version}{Output schema version, for future dispatch. Currently
 unused: there is one layout in the wild.}

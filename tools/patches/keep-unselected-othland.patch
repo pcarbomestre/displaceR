@@ -1,0 +1,13 @@
+diff --git a/commons/Node.cpp b/commons/Node.cpp
+index d814a489..d5f26261 100644
+--- a/commons/Node.cpp
++++ b/commons/Node.cpp
+@@ -1934,7 +1934,7 @@ void Node::apply_oth_land(int name_pop, int MLS_cat, double &oth_land_this_pop_t
+             }
+             else
+             {
+-                new_Ns_at_szgroup_pop[szgroup]=0;
++                new_Ns_at_szgroup_pop[szgroup]=Ns_at_szgroup_pop[szgroup]; // displaceR keep-unselected-othland: nothing available to other landings in this szgroup, so nothing is removed (upstream set N to 0)
+                 removals_per_szgroup[szgroup]=0;
+                 new_removals_at_szgroup_pop[szgroup]=cumul_removals_at_szgroup_pop[szgroup]+removals_per_szgroup[szgroup];
+ 

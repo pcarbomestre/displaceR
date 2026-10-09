@@ -131,3 +131,63 @@ test_that("edges referencing a nonexistent node are rejected", {
 test_that("reading a graph needs nrow from a scenario, and says so", {
   expect_error(read_displace_graph(tempfile()), "simusspe")
 })
+
+test_that("code_area's first two blocks hold the node coordinates, as the GUI writes them", {
+  d <- tempfile()
+  nodes <- data.frame(node_id = 0:1, lon = c(-124.5, -124.25), lat = c(40.5, 40.75),
+                      harbour = c(0L, 0L))
+  write_displace_graph(list(nodes = nodes, edges = NULL), d, a_graph = 1L,
+                       code_area = c(5L, 6L))
+  lines <- readLines(file.path(d, "graphsspe", "code_area_for_graph1_points.dat"))
+  expect_equal(lines, c("-124.5", "-124.25", "40.5", "40.75", "5", "6"))
+  expect_equal(read_displace_code_area(d, 1L, 2L), c(5L, 6L))
+})
+
+test_that("node_files writes code_area and every required per-node layer", {
+  d <- tempfile()
+  nodes <- data.frame(node_id = 0:2, lon = c(1, 2, 3), lat = c(4, 5, 6),
+                      harbour = c(0L, 0L, 1L))
+  paths <- write_displace_graph(list(nodes = nodes, edges = NULL), d,
+                                a_graph = 2L, node_files = TRUE)
+  required <- setdiff(PER_NODE_LAYERS, "icesrectanglecode")
+  for (layer in required) {
+    p <- file.path(d, "graphsspe", sprintf("coord2_with_%s.dat", layer))
+    expect_true(file.exists(p), info = layer)
+    expected <- if (startsWith(layer, "benthos_total_")) c("0", "0", "1") else rep("0", 3)
+    expect_equal(readLines(p), expected, info = layer)
+  }
+  expect_false(file.exists(file.path(d, "graphsspe", "coord2_with_icesrectanglecode.dat")))
+  expect_equal(read_displace_code_area(d, 2L, 3L), c(0L, 0L, 0L))
+  expect_setequal(names(paths), c("coord", "code_area", required))
+})
+
+test_that("layers replace the defaults and are checked", {
+  d <- tempfile()
+  nodes <- data.frame(node_id = 0:1, lon = c(1, 2), lat = c(3, 4), harbour = c(0L, 0L))
+  g <- list(nodes = nodes, edges = NULL)
+  write_displace_graph(g, d, a_graph = 1L, node_files = TRUE,
+                       layers = list(bathymetry = c(-120.5, -80), icesrectanglecode = c(7, 8)))
+  expect_equal(readLines(file.path(d, "graphsspe", "coord1_with_bathymetry.dat")), c("-120.5", "-80"))
+  expect_equal(readLines(file.path(d, "graphsspe", "coord1_with_icesrectanglecode.dat")), c("7", "8"))
+
+  d2 <- tempfile()
+  write_displace_graph(g, d2, a_graph = 1L, layers = list(sst = c(12, 13)))
+  expect_equal(list.files(file.path(d2, "graphsspe")), c("coord1.dat", "coord1_with_sst.dat"))
+
+  expect_error(write_displace_graph(g, tempfile(), a_graph = 1L, layers = list(depth = 1:2)),
+               "unknown layer")
+  expect_error(write_displace_graph(g, tempfile(), a_graph = 1L, layers = list(sst = 1:3)),
+               "has 3 values but there are 2 nodes")
+  expect_error(write_displace_graph(g, tempfile(), a_graph = 1L, layers = list(1:2)),
+               "named list")
+})
+
+test_that("node_files output passes the input validator's per-node checks", {
+  d <- tempfile()
+  nodes <- data.frame(node_id = 0:2, lon = c(1, 2, 3), lat = c(4, 5, 6), harbour = c(0L, 0L, 1L))
+  write_displace_graph(list(nodes = nodes, edges = NULL), d, a_graph = 0L, node_files = TRUE)
+  for (layer in setdiff(PER_NODE_LAYERS, "icesrectanglecode")) {
+    p <- file.path(d, "graphsspe", sprintf("coord0_with_%s.dat", layer))
+    expect_gte(sum(nzchar(trimws(readLines(p)))), 3L)
+  }
+})

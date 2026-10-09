@@ -1,5 +1,60 @@
 # displaceR 0.1.0.9000
 
+## Port-tagged fishing grounds (`grounds-by-port` feature patch, branch only)
+
+* `tools/build-displace.sh --patch grounds-by-port` builds DISPLACE v1.8.0 with
+  `tools/patches/grounds-by-port.patch`: a new `dyn_alloc_sce` option
+  `grounds_by_port` under which each vessel reads
+  `vesselsspe_<app>/<vid>_fgrounds_harbours_quarter<N>.dat`, draws a trip port,
+  fishes only that port's grounds and lands there (A -> grounds of B -> B).
+  `loglike` gains `trip_port` and `dep_port` at the end of each line. Without
+  the option the build behaves as plain v1.8.0. Opt-in, recorded as
+  `feature_patches` in `build-info.json`. Spec: `docs/grounds-by-port-spec.md`.
+* New `write_displace_fgrounds_harbours()`, `read_displace_fgrounds_harbours()`,
+  `check_grounds_by_port()` and `displace_features()`.
+  `read_displace_loglike()` names the two new columns;
+  `displace_output_spec("loglike", grounds_by_port = TRUE)` lists them.
+* `run_displace()` refuses a scenario using `grounds_by_port` on a binary whose
+  build record lacks the patch (`check_features = FALSE` overrides): an
+  unpatched simulator ignores the option and would silently run baseline.
+* Second opt-in patch, `--patch headless-ipc-lazy`: headless runs no longer
+  create the shared-memory object `OutQueue`, which only the desktop GUI uses
+  and which could make DISPLACE runs started at the same moment abort with
+  "File exists". Outputs are unchanged. See `docs/upstream-issues.md` 18.
+* Third opt-in patch, `--patch keep-unselected-othland`: DISPLACE's
+  other-landings step set to zero every size group with 1 kg or less available
+  on a node (e.g. sizes the other fleet does not select), wiping them monthly;
+  the patch leaves them unchanged. Needed whenever other landings and their
+  selectivity file are used. See `docs/upstream-issues.md` 19.
+* Speed patches, results unchanged: `--patch astar-speedup` (DISPLACE's A*
+  heuristic passes longitude as latitude, so on the west coast it is always NaN
+  after a full geodesic computation; the patch returns that NaN directly,
+  memoises paths and runs the identical search on a flat copy of the graph) and
+  `--patch sample-table-cache` (`do_sample()` reuses its sorted table for
+  identical inputs). Every output byte-identical on westcoast calibrations 2.0,
+  3.1 and 4.0; a run is ~9-13x faster. See `docs/speedup.md`, which also records
+  that upstream's A* rarely returns the shortest path (median 7% longer).
+* `--patch reproducible-diffusion`: `diffusePopN` drew from a generator seeded
+  by `std::random_device`, so two runs with the same simulation name differed.
+  It is now seeded from the name like everything else. Changes results relative
+  to earlier runs, once.
+* Opt-in `--patch shortest-paths`: with
+  the scenario option `shortest_paths`, vessels follow exact shortest paths
+  (Dijkstra) instead of upstream's A*. Changes results when switched on (about
+  20% shorter trips on the westcoast calibrations); byte-identical when off. See
+  `docs/shortest-paths.md`.
+* `build-displace.yml` gains a `patches` input, so feature-patched Linux builds
+  come from CI; their asset names carry the patch list.
+* `docs/displace-patches.md` summarises every change this branch makes to
+  DISPLACE v1.8.0 and how to build with them.
+* `run_displace_campaign()` gains `start_lag` (default 15 s): parallel
+  workers launch replicates at least that far apart, through a small lock in
+  `output_dir/.displaceR-launch/`, so their initial reads of the input tree do
+  not coincide. A launch more than `start_lag` after the previous one does not
+  wait; `start_lag = 0` disables it.
+* Local installs of feature-patched builds get their own label
+  (`1.8.0-96eadecb1980-grounds-by-port-local`) and record `feature_patches`.
+
 ## Building graphs from polygons
 
 * New `build_displace_graph()`: an R port of the editor GUI's "Create Graph"
@@ -24,6 +79,15 @@
   written. Checked against the westcoast graph 2 (wind lease areas at weight
   500): all 36 closure files are byte-identical and every penalised weight
   matches.
+* `write_displace_graph(node_files = TRUE)` also writes the per-node files the
+  simulator refuses to start without: `code_area_for_graph<N>_points.dat` and
+  the 13 required `coord<N>_with_<layer>.dat` layers, with the editor GUI's
+  defaults (0 everywhere; the two benthos layers 1 on harbour nodes).
+  `layers = list(<layer> = values)` supplies real values for any layer. The
+  `code_area` file now holds the node coordinates in its two ignored blocks,
+  as the GUI writes them, instead of zeros (the simulator reads the same
+  codes). From the westcoast June graph extent, all 3 `code_area` files and
+  39 layers come out byte-identical to the GUI's.
 * The output goes straight into `write_displace_graph()`. See
   `docs/graph-builder.md` for how the port differs from the GUI and why it is
   a port rather than a compiled upstream tool.

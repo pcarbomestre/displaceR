@@ -232,12 +232,25 @@ write_displace_graph(g, "DISPLACE_input_mycase", a_graph = 1)
 # scenario file
 ```
 
+## Per-node files
+
+The simulator also refuses to start without `code_area_for_graph<N>_points.dat`
+and 13 `coord<N>_with_<layer>.dat` layers (landscape, wind, sst, salinity,
+nitrogen, phosphorus, oxygen, dissolvedcarbon, bathymetry, shippingdensity,
+siltfraction, benthos_total_biomass, benthos_total_number; the ICES-rectangle
+layer is optional). `write_displace_graph(node_files = TRUE)` writes them with
+the editor GUI's defaults: area code 0, every layer 0 except the two benthos
+layers, which are 1 on harbour nodes. The GUI writes the `code_area` file as
+node longitudes, latitudes and codes; the simulator reads only the codes.
+Real values go in through `layers = list(bathymetry = …)` and `code_area = `.
+
+Checked on 2026-10-05 on the westcoast graphs 0-2 built from the June graph
+extent: all 3 `code_area` files and all 39 layers byte-identical.
+
 ## Not done yet
 
-- The per-node layers (`coord<N>_with_landscape.dat`, bathymetry, benthos, …)
-  and `code_area_for_graph<N>_points.dat`. These come from sampling rasters or
-  polygons at the nodes, which is another small `sf`/`terra` step, and
-  `write_displace_graph(code_area = )` already writes the last one.
+- Sampling real per-node values (bathymetry, landscape, …) from rasters or
+  polygons at the nodes. `layers =` takes them once sampled.
 - `shortPaths_*` / `min_distance_*` caches, still an open question in
   `CLAUDE.md`.
 - `names_harbours.dat` from `harbour_name`.

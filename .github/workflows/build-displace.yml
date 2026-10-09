@@ -19,6 +19,10 @@ on:
         description: "Release tag to publish under. Leave empty to build without publishing."
         required: false
         default: ""
+      patches:
+        description: "Opt-in feature patches from tools/patches/, space separated (e.g. 'grounds-by-port astar-speedup'). Empty builds plain upstream. Linux and macOS only."
+        required: false
+        default: ""
       targets:
         description: "Which glibc targets to build: 'both', '22.04', '24.04' or 'none'"
         required: false
@@ -93,12 +97,23 @@ jobs:
           ldd --version | head -1
 
       - name: Build
+        # inputs.patches arrives through env, never spliced into the script, and
+        # each name is checked before it becomes a --patch argument.
+        env:
+          PATCHES: ${{ inputs.patches }}
         run: |
+          set -euo pipefail
+          PATCH_ARGS=()
+          for p in $PATCHES; do
+            [[ "$p" =~ ^[a-z0-9-]+$ ]] || { echo "::error::bad patch name '$p'"; exit 1; }
+            PATCH_ARGS+=(--patch "$p")
+          done
           ./tools/build-displace.sh \
             --ref "${{ inputs.upstream_ref }}" \
             --workdir "$RUNNER_TEMP/displace-build" \
             --outdir "$GITHUB_WORKSPACE/dist" \
-            --jobs "$(nproc)"
+            --jobs "$(nproc)" \
+            ${PATCH_ARGS[@]+"${PATCH_ARGS[@]}"}
 
       - name: Verify the payload is relocatable
         # The build script already checks this in place. Repeat it after moving
@@ -209,7 +224,10 @@ jobs:
           UPSTREAM_SHA="$(python3 -c "import json;print(json.load(open('dist/build-info.json'))['upstream_sha'])")"
           OSVER="${{ matrix.target.os }}"
           OSVER="${OSVER#ubuntu-}"
-          NAME="displace-${UPSTREAM_SHA:0:12}-linux-x86_64-glibc${{ matrix.target.glibc }}"
+          # Feature-patched builds carry their patch list in the name, so they
+          # can never overwrite or be mistaken for the plain asset.
+          FEATURES="$(python3 -c "import json;print(json.load(open('dist/build-info.json')).get('feature_patches','').strip().replace(' ','+'))")"
+          NAME="displace-${UPSTREAM_SHA:0:12}-linux-x86_64-glibc${{ matrix.target.glibc }}${FEATURES:+-$FEATURES}"
           tar -czf "${NAME}.tar.gz" -C dist/payload .
           sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
           {
@@ -337,12 +355,23 @@ jobs:
           uname -m
 
       - name: Build
+        # inputs.patches arrives through env, never spliced into the script, and
+        # each name is checked before it becomes a --patch argument.
+        env:
+          PATCHES: ${{ inputs.patches }}
         run: |
+          set -euo pipefail
+          PATCH_ARGS=()
+          for p in $PATCHES; do
+            [[ "$p" =~ ^[a-z0-9-]+$ ]] || { echo "::error::bad patch name '$p'"; exit 1; }
+            PATCH_ARGS+=(--patch "$p")
+          done
           ./tools/build-displace.sh \
             --ref "${{ inputs.upstream_ref }}" \
             --workdir "$RUNNER_TEMP/displace-build" \
             --outdir "$GITHUB_WORKSPACE/dist" \
-            --jobs "$(sysctl -n hw.ncpu)"
+            --jobs "$(sysctl -n hw.ncpu)" \
+            ${PATCH_ARGS[@]+"${PATCH_ARGS[@]}"}
 
       - name: Verify the payload is relocatable
         # Same check as Linux, for the same reason: move the payload away from
@@ -406,7 +435,8 @@ jobs:
           set -euo pipefail
           UPSTREAM_SHA="$(python3 -c "import json;print(json.load(open('dist/build-info.json'))['upstream_sha'])")"
           ARCH="$(uname -m)"
-          NAME="displace-${UPSTREAM_SHA:0:12}-macos-${ARCH}"
+          FEATURES="$(python3 -c "import json;print(json.load(open('dist/build-info.json')).get('feature_patches','').strip().replace(' ','+'))")"
+          NAME="displace-${UPSTREAM_SHA:0:12}-macos-${ARCH}${FEATURES:+-$FEATURES}"
           tar -czf "${NAME}.tar.gz" -C dist/payload .
           shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
           {

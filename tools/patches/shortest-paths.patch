@@ -1,0 +1,222 @@
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 5c1e5ba6..de5a30a7 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -48,6 +48,7 @@
+ #include <dtree/vesselsevaluators.h>
+ 
+ #include "shortestpath/AStarShortestPathFinder.h"
++#include "shortestpath/DijkstraShortestPathFinder.h"
+ 
+ #include <boost/make_shared.hpp>
+ 
+@@ -61,6 +62,19 @@
+ std::mutex aStarMutex;
+ AStarShortestPathFinder aStarPathFinder;
+ 
++// displaceR shortest-paths: with the dyn_alloc option shortest_paths, vessels
++// travel along exact shortest paths (Dijkstra) instead of upstream's A*, whose
++// heuristic swaps latitude and longitude. Without it nothing changes.
++static DijkstraShortestPathFinder displaceR_dijkstraPathFinder;
++
++static std::list<types::NodeId> displaceR_findPath(const SimModel &simModel,
++                                                   GeoGraph::vertex from, GeoGraph::vertex to)
++{
++    if (simModel.scenario().dyn_alloc_sce.option(Options::shortest_paths))
++        return displaceR_dijkstraPathFinder.findShortestPath(simModel.geoGraph(), from, to);
++    return aStarPathFinder.findShortestPath(simModel.geoGraph(), from, to);
++}
++
+ std::vector<std::shared_ptr<dtree::StateEvaluator> > Vessel::mStateEvaluators;
+ 
+ 
+@@ -7317,7 +7331,7 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
+     {
+         // use ASTAR on the fly
+         aStarMutex.lock();
+-         path = aStarPathFinder.findShortestPath(simModel.geoGraph(), from.toIndex(), ground.toIndex());
++         path = displaceR_findPath(simModel, from.toIndex(), ground.toIndex());
+         aStarMutex.unlock();
+         //cout << from.toIndex() << " test the a-star...ok" <<"\n";
+ 
+@@ -7679,7 +7693,7 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
+     {
+         // Use ASTAR on the fly
+         aStarMutex.lock();
+-         path = aStarPathFinder.findShortestPath(simModel.geoGraph(), from.toIndex(), next_ground.toIndex());
++         path = displaceR_findPath(simModel, from.toIndex(), next_ground.toIndex());
+         aStarMutex.unlock();
+         //cout << from.toIndex() << " test the a-star for antoher ground...ok" <<"\n";
+ 
+@@ -7720,7 +7734,7 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
+             {
+                 // Use ASTAR on the fly
+                 aStarMutex.lock();
+-                 path = aStarPathFinder.findShortestPath(simModel.geoGraph(), from.toIndex(), next_ground.toIndex());
++                 path = displaceR_findPath(simModel, from.toIndex(), next_ground.toIndex());
+                 aStarMutex.unlock();
+                 //cout << from.toIndex() << " test the a-star for antoher ground...ok" <<"\n";
+             }
+@@ -7940,7 +7954,7 @@ void Vessel::choose_a_port_and_then_return(const SimModel& simModel,
+     {
+         // Use ASTAR on the fly
+         aStarMutex.lock();
+-         path = aStarPathFinder.findShortestPath(simModel.geoGraph(), from.toIndex(), arr.toIndex());
++         path = displaceR_findPath(simModel, from.toIndex(), arr.toIndex());
+         aStarMutex.unlock();
+         //cout << from.toIndex() << " test the a-star for antoher ground...ok" <<"\n";
+     }
+@@ -7973,7 +7987,7 @@ void Vessel::choose_a_port_and_then_return(const SimModel& simModel,
+         {
+             // Use ASTAR on the fly
+             aStarMutex.lock();
+-             path = aStarPathFinder.findShortestPath(simModel.geoGraph(), from.toIndex(), arr.toIndex());
++             path = displaceR_findPath(simModel, from.toIndex(), arr.toIndex());
+             aStarMutex.unlock();
+             //cout << from.toIndex() << " test the a-star for this situation...ok" <<"\n";
+         }
+diff --git a/commons/options.cpp b/commons/options.cpp
+index 5b528329..d241ee27 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -82,6 +82,7 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap,promote_high_tariffs);
+     O(mMap,TechCreeping3Per);
+     O(mMap,ExitVessels10Per);
++    O(mMap, shortest_paths);
+     O(mMap,halfShippingDensity);
+     O(mMap,DEBUG_TAC);
+     O(mMap,EffortMinControl);
+diff --git a/commons/shortestpath/DijkstraShortestPathFinder.h b/commons/shortestpath/DijkstraShortestPathFinder.h
+new file mode 100644
+index 00000000..d3eb0025
+--- /dev/null
++++ b/commons/shortestpath/DijkstraShortestPathFinder.h
+@@ -0,0 +1,115 @@
++// displaceR shortest-paths.
++//
++// Exact shortest paths on the GeoGraph, by edge weight (km), for scenarios that
++// set the dyn_alloc option shortest_paths. Upstream's A* stores each node's
++// longitude where it expects latitude, so its heuristic is meaningless (NaN
++// wherever |longitude| > 90) and the path it returns is usually not the
++// shortest; see docs/shortest-paths.md in displaceR. Without the option the
++// simulator keeps using that A*, unchanged.
++//
++// Header-only and used from commons/Vessel.cpp alone, so there is one instance.
++
++#ifndef DISPLACER_DIJKSTRASHORTESTPATHFINDER_H
++#define DISPLACER_DIJKSTRASHORTESTPATHFINDER_H
++
++#include "GeoGraph.h"
++
++#include <idtypes.h>
++
++#include <boost/graph/dijkstra_shortest_paths.hpp>
++
++#include <cstdint>
++#include <list>
++#include <mutex>
++#include <unordered_map>
++#include <vector>
++
++class DijkstraShortestPathFinder {
++    struct found_goal {};
++
++    class goal_visitor : public boost::default_dijkstra_visitor {
++    public:
++        explicit goal_visitor(GeoGraph::vertex goal) : mGoal(goal) {}
++        template <class Graph>
++        void examine_vertex(GeoGraph::vertex u, const Graph &) {
++            // Popped from the queue: its distance is final.
++            if (u == mGoal)
++                throw found_goal();
++        }
++    private:
++        GeoGraph::vertex mGoal;
++    };
++
++public:
++    // Same contract as AStarShortestPathFinder::findShortestPath(): the list
++    // runs from `from` to `to` inclusive, and is empty if `to` is unreachable.
++    std::list<types::NodeId> findShortestPath(const GeoGraph &ggraph, GeoGraph::vertex from, GeoGraph::vertex to)
++    {
++        std::lock_guard<std::mutex> lock(mMutex);
++
++        // The graph is loaded once and never changes, and the search is
++        // deterministic, so results are memoised by (from, to).
++        if (mGraph != &ggraph) {
++            mCache.clear();
++            mCacheBytes = 0;
++            mGraph = &ggraph;
++        }
++        const uint64_t key = (static_cast<uint64_t>(from) << 32) | static_cast<uint64_t>(to);
++        auto it = mCache.find(key);
++        if (it != mCache.end())
++            return std::list<types::NodeId>(it->second.begin(), it->second.end());
++
++        std::list<types::NodeId> result = search(ggraph, from, to);
++
++        const size_t bytes = result.size() * sizeof(types::NodeId) + 64;
++        if (mCacheBytes + bytes > kCacheBudget) {
++            mCache.clear();
++            mCacheBytes = 0;
++        }
++        mCache.emplace(key, std::vector<types::NodeId>(result.begin(), result.end()));
++        mCacheBytes += bytes;
++        return result;
++    }
++
++private:
++    std::list<types::NodeId> search(const GeoGraph &ggraph, GeoGraph::vertex from, GeoGraph::vertex to)
++    {
++        const auto &graph = ggraph.graph;
++        const size_t n = boost::num_vertices(graph);
++        mPred.resize(n);
++        mDist.resize(n);
++        auto index = boost::get(boost::vertex_index, graph);
++
++        bool found = false;
++        try {
++            boost::dijkstra_shortest_paths(graph, from,
++                boost::predecessor_map(boost::make_iterator_property_map(mPred.begin(), index))
++                    .distance_map(boost::make_iterator_property_map(mDist.begin(), index))
++                    .weight_map(boost::get(boost::edge_weight, graph))
++                    .visitor(goal_visitor(to)));
++        } catch (found_goal &) {
++            found = true;
++        }
++
++        std::list<types::NodeId> result;
++        if (!found)
++            return result;
++        for (auto v = to;; v = mPred[v]) {
++            result.push_front(types::NodeId(static_cast<unsigned short>(v)));
++            if (mPred[v] == v)
++                break;
++        }
++        return result;
++    }
++
++    static constexpr size_t kCacheBudget = size_t(512) * 1024 * 1024;
++
++    std::mutex mMutex;
++    const GeoGraph *mGraph = nullptr;
++    std::unordered_map<uint64_t, std::vector<types::NodeId>> mCache;
++    size_t mCacheBytes = 0;
++    std::vector<GeoGraph::vertex> mPred;
++    std::vector<GeoGraph::cost> mDist;
++};
++
++#endif // DISPLACER_DIJKSTRASHORTESTPATHFINDER_H
+diff --git a/include/options.h b/include/options.h
+index af9337cd..d077e53c 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -140,6 +140,7 @@ enum Dyn_Alloc {
+     promote_high_tariffs,
+     TechCreeping3Per,
+     ExitVessels10Per,
++    shortest_paths,      // displaceR shortest-paths: exact (Dijkstra) paths instead of upstream's A*
+     halfShippingDensity,
+     DEBUG_TAC,
+     EffortMinControl,

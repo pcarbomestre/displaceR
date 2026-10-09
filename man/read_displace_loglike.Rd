@@ -22,6 +22,12 @@ column count of `loglike_*.dat` depends on the number of populations and on
 which of them are modelled explicitly, so it cannot be read without the case
 study's `config.dat`.
 }
+\details{
+Runs of a `grounds-by-port` build with the `grounds_by_port` option have two
+more columns at the end, `trip_port` (node of the port whose grounds the
+trip fished, `-1` if the vessel had no port-tagged entries) and `dep_port`
+(node the trip left from); they are recognised by the width and named.
+}
 \examples{
 \dontrun{
 cfg <- read_displace_config("input", "minitest")

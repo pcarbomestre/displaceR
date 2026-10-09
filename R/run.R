@@ -80,6 +80,11 @@ STEPS_PER_YEAR <- 8762L
 #' @param validate Run [validate_displace_input()] before launching. Cheap, and
 #'   it catches the input errors that otherwise surface as an opaque simulator
 #'   abort.
+#' @param check_features Refuse to run a scenario whose `dyn_alloc_sce` uses an
+#'   option that only a feature-patched build understands (currently
+#'   `grounds_by_port`, see [check_grounds_by_port()]) on a binary whose build
+#'   record does not list that patch. The simulator ignores unknown option
+#'   names, so without this the run would silently be plain baseline.
 #'
 #' @section Defaults that differ from the raw CLI:
 #'
@@ -131,7 +136,8 @@ run_displace <- function(input_dir,
                          binary = NULL,
                          echo = TRUE,
                          dry_run = FALSE,
-                         validate = TRUE) {
+                         validate = TRUE,
+                         check_features = TRUE) {
 
   if (missing(input_dir) || !length(input_dir)) {
     stopf("input_dir is required.")
@@ -227,6 +233,10 @@ run_displace <- function(input_dir,
 
   if (dry_run) {
     return(res)
+  }
+
+  if (isTRUE(check_features)) {
+    check_binary_features(res$binary, input_dir, input_name, scenario)
   }
 
   res$started_at <- Sys.time()

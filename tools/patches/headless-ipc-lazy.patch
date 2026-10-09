@@ -1,0 +1,38 @@
+diff --git a/simulator/outputqueuemanager.cpp b/simulator/outputqueuemanager.cpp
+index 1040a1bf..c980ef7f 100644
+--- a/simulator/outputqueuemanager.cpp
++++ b/simulator/outputqueuemanager.cpp
+@@ -78,6 +78,8 @@ void OutputQueueManager::start()
+ {
+     std::unique_lock<std::mutex> locker(mMutex);
+     UNUSED(locker);
++    if (mType == Binary && !ipcQueue)
++        ipcQueue.reset(new IpcQueue());
+     mThread = std::thread( [this]() { thread(); });
+ }
+ 
+@@ -128,7 +130,7 @@ void OutputQueueManager::thread()
+                 } else if (len > 0) {
+                     IpcMessageTypes t = msg->getType();
+                     //                std::cout << "** Sending message type " << t << " length: " << len << "\n";
+-                    ipcQueue.push(t,buffer, len);
++                    ipcQueue->push(t,buffer, len);
+                 }
+                 break;
+             }
+diff --git a/simulator/outputqueuemanager.h b/simulator/outputqueuemanager.h
+index dc033528..e71432a0 100644
+--- a/simulator/outputqueuemanager.h
++++ b/simulator/outputqueuemanager.h
+@@ -80,7 +80,10 @@ private:
+ 
+     std::queue<std::shared_ptr<OutputMessage> > mQueue;
+ 
+-    IpcQueue ipcQueue;
++    // Created in start() only for the Binary (GUI) protocol: constructing an
++    // IpcQueue opens or creates the machine-wide shared memory "OutQueue", which
++    // a headless run never uses.
++    std::unique_ptr<IpcQueue> ipcQueue;
+     enum ProtocolType { TextWithStdOut, Binary, None } mType;
+ 
+     std::ostream &mOutStream;        ///< File descriptor for socket/pipe (Binary protocol)

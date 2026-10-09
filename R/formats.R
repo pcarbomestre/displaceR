@@ -237,6 +237,9 @@ OUTPUT_SPECS <- list(
 #'   variable-width layouts.
 #' @param explicit_pops Zero-based ids of the explicitly modelled populations,
 #'   i.e. `setdiff(0:(nbpops-1), implicit_pops)`. Required for `loglike`.
+#' @param grounds_by_port For `loglike`: append the `trip_port` and `dep_port`
+#'   columns that a `grounds-by-port` build writes when the scenario enables
+#'   the `grounds_by_port` option (see [check_grounds_by_port()]).
 #' @param db_version Output schema version, for future dispatch. Currently
 #'   unused: there is one layout in the wild.
 #'
@@ -246,7 +249,7 @@ OUTPUT_SPECS <- list(
 #' displace_output_spec("popstats")
 #' displace_output_spec("loglike", nbpops = 3, explicit_pops = c(0, 2))
 displace_output_spec <- function(type, nbpops = NULL, explicit_pops = NULL,
-                                 db_version = NULL) {
+                                 grounds_by_port = FALSE, db_version = NULL) {
   spec <- OUTPUT_SPECS[[type]]
   if (is.null(spec)) {
     stopf("unknown output type '%s'. Known: %s",
@@ -259,7 +262,8 @@ displace_output_spec <- function(type, nbpops = NULL, explicit_pops = NULL,
     spec$builder,
     popnodes_totals = popnodes_totals_cols(nbpops),
     impact_per_szgroup = impact_per_szgroup_cols(nbpops),
-    loglike = loglike_cols(nbpops, explicit_pops),
+    loglike = c(loglike_cols(nbpops, explicit_pops),
+                if (isTRUE(grounds_by_port)) LOGLIKE_GROUNDS_BY_PORT_COLS),
     stopf("no column builder for '%s'", type)
   )
 }
@@ -293,6 +297,11 @@ popnodes_totals_cols <- function(nbpops) {
 ## `disc.*` block for the explicit populations that the flat field list in the
 ## documentation omits. Where the two disagree, the R idiom is the one that
 ## matches real files, so it is what is reproduced here.
+## Appended by the grounds-by-port feature patch, only when the scenario enables
+## grounds_by_port: the node of the trip's port (-1 if the vessel had no
+## port-tagged entries) and the node the trip departed from.
+LOGLIKE_GROUNDS_BY_PORT_COLS <- c("trip_port", "dep_port")
+
 loglike_cols <- function(nbpops, explicit_pops) {
   if (is.null(nbpops)) {
     stopf(paste0("loglike's width depends on the number of populations; pass ",
