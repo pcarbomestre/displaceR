@@ -1,0 +1,52 @@
+diff --git a/commons/Population.cpp b/commons/Population.cpp
+index 8811ff45..2175e2d7 100644
+--- a/commons/Population.cpp
++++ b/commons/Population.cpp
+@@ -30,6 +30,15 @@
+ static std::random_device rd;
+ static std::mt19937 g(rd());
+ 
++// displaceR reproducible-diffusion: diffuse_N_from_field() shuffles nodes with
++// g, which is seeded from std::random_device, so diffusePopN made every run
++// different even for the same simulation name. SimModel::initRandom() now
++// reseeds g with the seed taken from the name, as it already does for rand().
++void reseed_population_shuffle(unsigned int seed)
++{
++    g.seed(seed);
++}
++
+ 
+ 
+ Population::Population(int a_name,
+diff --git a/commons/SimModel.cpp b/commons/SimModel.cpp
+index 6eeb6508..fcbba0ca 100644
+--- a/commons/SimModel.cpp
++++ b/commons/SimModel.cpp
+@@ -6,6 +6,7 @@
+ #include "comstructs.h"
+ #include "Calendar.h"
+ #include "shortestpath/GeoGraph.h"
++#include "Population.h"
+ 
+ struct SimModel::Impl {
+     std::string namesimu;
+@@ -471,5 +472,6 @@ void SimModel::initRandom(std::string const &namesimu)
+ 
+     // set always the same seed for a given simu name (that should include a integer with pattern s100 or sim100 or simu100...)
+     srand(a_seed);
++    reseed_population_shuffle(static_cast<unsigned int>(a_seed));
+ }
+ 
+diff --git a/include/Population.h b/include/Population.h
+index e5754d65..47bb313b 100644
+--- a/include/Population.h
++++ b/include/Population.h
+@@ -399,4 +399,8 @@ class  Population
+ 
+    
+ };
++// displaceR reproducible-diffusion: reseeds the generator used by
++// Population::diffuse_N_from_field(). Called from SimModel::initRandom().
++void reseed_population_shuffle(unsigned int seed);
++
+ #endif							 // POPULATION_H

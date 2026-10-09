@@ -1,0 +1,186 @@
+diff --git a/include/myRutils.h b/include/myRutils.h
+index be05bb45..bc238f89 100644
+--- a/include/myRutils.h
++++ b/include/myRutils.h
+@@ -27,6 +27,12 @@
+ #include <algorithm>
+ 
+ #include <cmath>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <tuple>
++#include <type_traits>
++#include <unordered_map>
+ 
+ using namespace std;
+ 
+@@ -38,8 +44,57 @@ void revsort(double *a, int *ib, int n);
+ void ProbSampleReplace(int n, double *p, int *perm, int nans, int *ans);
+ double unif_rand(void);
+ 
++// displaceR sample-table-cache.
++//
++// do_sample() normalises, sorts and accumulates the whole probability vector on
++// every call, then makes its draws from that table. Most calls repeat the exact
++// same inputs (a vessel's grounds or port-ground entries only change at a
++// reload or a closure). For bit-for-bit identical (val, proba) the table is
++// identical too -- std::sort is deterministic for the same input sequence and
++// the sums are done in the same order -- so a stored copy can be reused and the
++// draws from unif_rand() are unchanged. Inputs are matched by full byte
++// comparison, never by hash alone. Bounded by DISPLACE_SAMPLE_CACHE_MB
++// (default 256 per thread; 0 disables); emptied when full.
++namespace displaceR_sample {
++
++// Only picks the bucket; a hit is confirmed by memcmp below.
++inline uint64_t hash_bytes(const void *data, size_t len, uint64_t h)
++{
++    const unsigned char *p = static_cast<const unsigned char *>(data);
++    size_t i = 0;
++    for (; i + 8 <= len; i += 8) {
++        uint64_t w;
++        std::memcpy(&w, p + i, 8);
++        h = (h ^ w) * 0x9E3779B97F4A7C15ULL;
++        h ^= h >> 29;
++    }
++    for (; i < len; ++i)
++        h = (h ^ p[i]) * 1099511628211ULL;
++    return h ^ len;
++}
++
++inline size_t budget_bytes()
++{
++    static const size_t budget = [] {
++        const char *mb = std::getenv("DISPLACE_SAMPLE_CACHE_MB");
++        return static_cast<size_t>(mb ? std::strtoull(mb, nullptr, 10) : 256ULL) * 1024 * 1024;
++    }();
++    return budget;
++}
++
+ template <typename I>
+-std::vector<I> do_sample( int n, int nval, const std::vector<I> &val, const std::vector<double> &proba)
++struct Entry {
++    std::vector<I> val;
++    std::vector<double> proba;
++    std::vector<std::tuple<I, double> > table;
++};
++
++} // namespace displaceR_sample
++
++// The table do_sample() draws from: probabilities normalised by their total,
++// sorted in descending order, then accumulated. Unchanged upstream code.
++template <typename I>
++std::vector<std::tuple<I, double> > do_sample_table(int nval, const std::vector<I> &val, const std::vector<double> &proba)
+ {
+     using Rec = std::tuple<I, double>;
+     class RecGreater {
+@@ -49,31 +104,17 @@ std::vector<I> do_sample( int n, int nval, const std::vector<I> &val, const std:
+         }
+     };
+ 
+-    if (val.size() == 0 || proba.size() == 0 || nval == 0)
+-        return vector<I>();
+-
+-    if (nval != (int)val.size() || nval != (int)proba.size())
+-        throw std::invalid_argument("do_sample requires nval == val.size() == proba.size()");
+-
+     double total = 0.0;
+ 
+     for (auto pr : proba) {
+         total += pr;
+     }
+ 
+-    vector<Rec> prb;
++    std::vector<Rec> prb;
+     for (int i = 0; i < (int)val.size(); ++i) {
+         prb.push_back(std::make_pair(val[i], proba[i]/ total));
+     }
+ 
+-    vector<I> res;
+-    res.reserve(n);
+-
+-    int nans = n;
+-
+-    double rU;
+-    int nm1 = nval - 1;
+-
+     /* sort the probabilities into descending order */
+     std::sort(prb.begin(), prb.end(), RecGreater());
+ 
+@@ -81,6 +122,76 @@ std::vector<I> do_sample( int n, int nval, const std::vector<I> &val, const std:
+     for (int i = 1 ; i < nval; i++) {
+         std::get<1>(prb[i]) += std::get<1>(prb[i - 1]);
+     }
++    return prb;
++}
++
++template <typename I>
++const std::vector<std::tuple<I, double> > &do_sample_cached_table(int nval, const std::vector<I> &val, const std::vector<double> &proba)
++{
++    using namespace displaceR_sample;
++    static thread_local std::unordered_map<uint64_t, Entry<I> > cache;
++    static thread_local size_t bytes = 0;
++
++    uint64_t key = hash_bytes(val.data(), val.size() * sizeof(I), 1469598103934665603ULL);
++    key = hash_bytes(proba.data(), proba.size() * sizeof(double), key);
++
++    auto it = cache.find(key);
++    if (it != cache.end()) {
++        const Entry<I> &e = it->second;
++        if (e.val.size() == val.size() && e.proba.size() == proba.size() &&
++            std::memcmp(e.val.data(), val.data(), val.size() * sizeof(I)) == 0 &&
++            std::memcmp(e.proba.data(), proba.data(), proba.size() * sizeof(double)) == 0)
++            return e.table;
++    }
++
++    Entry<I> e{val, proba, do_sample_table(nval, val, proba)};
++    const size_t size = val.size() * (sizeof(I) + sizeof(double) + sizeof(std::tuple<I, double>)) + 128;
++    if (it == cache.end() && bytes + size > budget_bytes()) {
++        cache.clear();
++        bytes = 0;
++    }
++    if (it == cache.end()) {
++        bytes += size;
++        it = cache.emplace(key, std::move(e)).first;
++    } else {
++        it->second = std::move(e);   // hash collision or changed inputs: replace
++    }
++    return it->second.table;
++}
++
++template <typename I>
++std::vector<I> do_sample( int n, int nval, const std::vector<I> &val, const std::vector<double> &proba)
++{
++    using Rec = std::tuple<I, double>;
++
++    if (val.size() == 0 || proba.size() == 0 || nval == 0)
++        return vector<I>();
++
++    if (nval != (int)val.size() || nval != (int)proba.size())
++        throw std::invalid_argument("do_sample requires nval == val.size() == proba.size()");
++
++    vector<Rec> own;
++    const vector<Rec> *table;
++    if constexpr (std::is_trivially_copyable<I>::value) {
++        if (displaceR_sample::budget_bytes() > 0) {
++            table = &do_sample_cached_table(nval, val, proba);
++        } else {
++            own = do_sample_table(nval, val, proba);
++            table = &own;
++        }
++    } else {
++        own = do_sample_table(nval, val, proba);
++        table = &own;
++    }
++    const vector<Rec> &prb = *table;
++
++    vector<I> res;
++    res.reserve(n);
++
++    int nans = n;
++
++    double rU;
++    int nm1 = nval - 1;
+ 
+     /* compute the sample */
+     for (int i = 0; i < nans; i++)

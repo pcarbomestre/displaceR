@@ -1,0 +1,321 @@
+diff --git a/commons/shortestpath/AStarShortestPathFinder.cpp b/commons/shortestpath/AStarShortestPathFinder.cpp
+index 00f857ea..5e41b66e 100644
+--- a/commons/shortestpath/AStarShortestPathFinder.cpp
++++ b/commons/shortestpath/AStarShortestPathFinder.cpp
+@@ -6,6 +6,11 @@
+ #include "GeographicLib/Geodesic.hpp"
+ 
+ #include <boost/graph/astar_search.hpp>
++#include <boost/graph/iteration_macros.hpp>
++
++#include <cmath>
++#include <cstdlib>
++#include <iostream>
+ 
+ using namespace boost;
+ 
+@@ -14,6 +19,33 @@ namespace {
+ struct found_goal {
+ };
+ 
++// displaceR astar-speedup: what GeographicLib returns when a latitude is
++// outside [-90, 90]. GeoGraph::addNode stores {x, y} into a location declared
++// {y, x}, so the heuristic below passes each node's longitude as its latitude.
++// Wherever |longitude| > 90 (the whole US west coast, for instance) Inverse()
++// therefore returns NaN for every call, after doing the full geodesic work.
++// Returning that same NaN directly leaves the search, and so every path,
++// unchanged; it only skips the work. The value is probed from the library
++// itself at startup, and the shortcut is disabled unless the probe yields NaN
++// or if DISPLACE_ASTAR_NAN_SHORTCUT=0.
++struct NanShortcut {
++    bool enabled = false;
++    double value = 0;
++    NanShortcut() {
++        double d = 0;
++        GeographicLib::Geodesic::WGS84().Inverse(91.0, 0.0, 0.0, 0.0, d);
++        const char *env = std::getenv("DISPLACE_ASTAR_NAN_SHORTCUT");
++        enabled = std::isnan(d) && !(env && *env == '0');
++        value = d;
++    }
++};
++
++const NanShortcut &nanShortcut()
++{
++    static const NanShortcut shortcut;
++    return shortcut;
++}
++
+ // euclidean distance heuristic
+ template <class Graph, class CostType, class LocMap> 
+ class distance_heuristic : public astar_heuristic<Graph, CostType>
+@@ -26,6 +58,11 @@ public:
+             : m_location(l), m_goal(goal) {}
+     CostType operator()(Vertex u)
+     {
++        // Same test as GeographicLib's Math::LatFix, on the same doubles.
++        const NanShortcut &nan = nanShortcut();
++        if (nan.enabled && (std::fabs(double(m_location[m_goal].y)) > 90 ||
++                            std::fabs(double(m_location[u].y)) > 90))
++            return nan.value;
+         double d;
+         geod.Inverse(m_location[m_goal].y, m_location[m_goal].x, m_location[u].y, m_location[u].x, d);
+         return d;
+@@ -55,9 +92,72 @@ private:
+ 
+ }
+ 
+-//std::list<int>
++// displaceR astar-speedup, path cache. Every caller asks for a path on the same const
++// graph, loaded once, and the search below draws no random numbers, so the same
++// (from, to) always yields the same list. Returning a stored copy is therefore
++// identical to searching again; only the time differs.
++//
++// The cache is bounded by DISPLACE_ASTAR_CACHE_MB (default 1024; 0 disables
++// it). When full it is emptied and refilled, which keeps whatever pairs the
++// current quarter's grounds use. DISPLACE_ASTAR_CACHE_STATS=1 prints the hit
++// rate to stderr every 1000 lookups.
+ std::list<types::NodeId>
+ AStarShortestPathFinder::findShortestPath(const GeoGraph &ggraph, GeoGraph::vertex from, GeoGraph::vertex to)
++{
++    std::lock_guard<std::mutex> lock(mCacheMutex);
++
++    if (mCacheGraph != &ggraph) {
++        mCache.clear();
++        mCacheBytes = 0;
++        mCacheGraph = &ggraph;
++        const char *mb = std::getenv("DISPLACE_ASTAR_CACHE_MB");
++        mCacheBudget = (mb ? std::strtoull(mb, nullptr, 10) : 1024ULL) * 1024ULL * 1024ULL;
++        const char *st = std::getenv("DISPLACE_ASTAR_CACHE_STATS");
++        mCacheStats = st && *st && *st != '0';
++        const char *cg = std::getenv("DISPLACE_ASTAR_COMPACT");
++        mCompactEnabled = !(cg && *cg == '0');
++        if (mCompactEnabled)
++            buildCompactGraph(ggraph);
++    }
++
++    auto search = [&]() {
++        return mCompactEnabled ? searchShortestPathCompact(ggraph, from, to)
++                               : searchShortestPath(ggraph, from, to);
++    };
++
++    if (mCacheBudget == 0)
++        return search();
++
++    const uint64_t key = (static_cast<uint64_t>(from) << 32) | static_cast<uint64_t>(to);
++    auto it = mCache.find(key);
++    std::list<types::NodeId> result;
++    if (it != mCache.end()) {
++        ++mHits;
++        result.assign(it->second.begin(), it->second.end());
++    } else {
++        ++mMisses;
++        result = search();
++        const size_t bytes = result.size() * sizeof(types::NodeId) + 64;
++        if (mCacheBytes + bytes > mCacheBudget) {
++            mCache.clear();
++            mCacheBytes = 0;
++            ++mFlushes;
++        }
++        mCache.emplace(key, std::vector<types::NodeId>(result.begin(), result.end()));
++        mCacheBytes += bytes;
++    }
++
++    if (mCacheStats && (mHits + mMisses) % 1000 == 0) {
++        std::cerr << "astar-path-cache: " << (mHits + mMisses) << " lookups, "
++                  << mHits << " hits (" << (100.0 * mHits / (mHits + mMisses)) << "%), "
++                  << mCache.size() << " paths, " << (mCacheBytes >> 20) << " MB, "
++                  << mFlushes << " flushes\n";
++    }
++    return result;
++}
++
++std::list<types::NodeId>
++AStarShortestPathFinder::searchShortestPath(const GeoGraph &ggraph, GeoGraph::vertex from, GeoGraph::vertex to)
+ {
+     auto &graph = ggraph.graph;
+ 
+@@ -91,3 +191,136 @@ AStarShortestPathFinder::findShortestPath(const GeoGraph &ggraph, GeoGraph::vert
+     return result;
+ 
+ }
++
++// displaceR astar-speedup, compact graph.
++//
++// GeoGraph::Graph is an adjacency_list<listS, vecS, undirectedS>: every
++// out-edge is a node in a linked list pointing at a separately allocated edge
++// record, so the search spends its time chasing pointers. The copy below holds
++// the same out-edges in flat arrays, in exactly the order Boost's out_edges()
++// yields them, and searchShortestPathCompact() is a line-by-line transcription
++// of what searchShortestPath() runs: astar_search_tree() initialisation,
++// astar_search_no_init_tree() with the same 4-ary heap of (rank, vertex) pairs,
++// boost::relax() for an undirected graph (including its reverse branch),
++// closed_plus combine and std::less compare, all on the same float values. So
++// it visits the same vertices in the same order and returns the same path.
++//
++// Not used if any weight is negative (Boost would throw negative_edge there) or
++// with DISPLACE_ASTAR_COMPACT=0.
++void AStarShortestPathFinder::buildCompactGraph(const GeoGraph &ggraph)
++{
++    const auto &graph = ggraph.graph;
++    const size_t n = num_vertices(graph);
++    mOffsets.assign(n + 1, 0);
++    mTargets.clear();
++    mWeights.clear();
++    mTargets.reserve(2 * num_edges(graph));
++    mWeights.reserve(2 * num_edges(graph));
++    auto weight = get(edge_weight, graph);
++    for (size_t v = 0; v < n; ++v) {
++        mOffsets[v] = mTargets.size();
++        BGL_FORALL_OUTEDGES_T(v, e, graph, GeoGraph::Graph) {
++            const GeoGraph::cost w = get(weight, e);
++            if (w < GeoGraph::cost()) {
++                mCompactEnabled = false;
++                return;
++            }
++            mTargets.push_back(target(e, graph));
++            mWeights.push_back(w);
++        }
++    }
++    mOffsets[n] = mTargets.size();
++    mPred.resize(n);
++    mDist.resize(n);
++}
++
++std::list<types::NodeId>
++AStarShortestPathFinder::searchShortestPathCompact(const GeoGraph &ggraph, GeoGraph::vertex from, GeoGraph::vertex to)
++{
++    using Vertex = GeoGraph::vertex;
++    using Distance = GeoGraph::cost;
++    const size_t n = mOffsets.size() - 1;
++
++    const Distance inf = boost::detail::get_max<Distance>()();
++    const Distance zero = Distance();
++    std::less<Distance> compare;
++    closed_plus<Distance> combine(inf);
++    distance_heuristic<GeoGraph::Graph, Distance, GeoGraph::location const *> h(ggraph.locations.data(), to);
++
++    // astar_search_tree(): initialise every vertex, then the source.
++    for (size_t u = 0; u < n; ++u) {
++        mDist[u] = inf;
++        mPred[u] = u;
++    }
++    mDist[from] = zero;
++    const Distance source_rank = h(from);
++
++    // astar_search_no_init_tree()
++    typedef d_ary_heap_indirect< std::pair< Distance, Vertex >, 4,
++        null_property_map< std::pair< Distance, Vertex >, std::size_t >,
++        function_property_map< graph_detail::select1st< Distance, Vertex >,
++            std::pair< Distance, Vertex > >,
++        std::less< Distance > >
++        MutableQueue;
++    MutableQueue Q(make_function_property_map< std::pair< Distance, Vertex > >(
++                       graph_detail::select1st< Distance, Vertex >()),
++        null_property_map< std::pair< Distance, Vertex >, std::size_t >(),
++        compare);
++
++    bool found = false;
++    Q.push(std::make_pair(source_rank, from));
++    while (!Q.empty()) {
++        Vertex v;
++        Distance v_rank;
++        boost::tie(v_rank, v) = Q.top();
++        Q.pop();
++        if (v == to) {                       // astar_goal_visitor::examine_vertex
++            found = true;
++            break;
++        }
++        for (size_t k = mOffsets[v]; k < mOffsets[v + 1]; ++k) {
++            const Vertex w = mTargets[k];
++            const Distance e_weight = mWeights[k];
++
++            // boost::relax(e, g, ...) with u = source(e) = v, undirected.
++            bool decreased;
++            const Distance d_u = mDist[v];
++            const Distance d_v = mDist[w];
++            if (compare(combine(d_u, e_weight), d_v)) {
++                mDist[w] = combine(d_u, e_weight);
++                if (compare(mDist[w], d_v)) {
++                    mPred[w] = v;
++                    decreased = true;
++                } else {
++                    decreased = false;
++                }
++            } else if (compare(combine(d_v, e_weight), d_u)) {
++                mDist[v] = combine(d_v, e_weight);
++                if (compare(mDist[v], d_u)) {
++                    mPred[v] = w;
++                    decreased = true;
++                } else {
++                    decreased = false;
++                }
++            } else {
++                decreased = false;
++            }
++
++            if (decreased) {
++                Distance w_rank = combine(mDist[w], h(w));
++                Q.push(std::make_pair(w_rank, w));
++            }
++        }
++    }
++
++    std::list<types::NodeId> result;
++    if (!found)
++        return result;
++
++    for(auto v = to;; v = mPred[v]) {
++        result.push_front(types::NodeId(static_cast<unsigned short> (v) ));
++        if(mPred[v] == v)
++            break;
++    }
++    return result;
++}
+diff --git a/commons/shortestpath/AStarShortestPathFinder.h b/commons/shortestpath/AStarShortestPathFinder.h
+index 23621858..c454f9f8 100644
+--- a/commons/shortestpath/AStarShortestPathFinder.h
++++ b/commons/shortestpath/AStarShortestPathFinder.h
+@@ -11,7 +11,11 @@
+ 
+ 
+ 
++#include <cstdint>
+ #include <list>
++#include <mutex>
++#include <unordered_map>
++#include <vector>
+ 
+ #include<idtypes.h>
+ typedef types::NodeId::type vertex_t;
+@@ -20,6 +24,31 @@ typedef types::NodeId::type vertex_t;
+ class  AStarShortestPathFinder {
+ public:
+     std::list<types::NodeId> findShortestPath (const GeoGraph &graph, GeoGraph::vertex from, GeoGraph::vertex to);
++
++private:
++    std::list<types::NodeId> searchShortestPath (const GeoGraph &graph, GeoGraph::vertex from, GeoGraph::vertex to);
++    std::list<types::NodeId> searchShortestPathCompact (const GeoGraph &graph, GeoGraph::vertex from, GeoGraph::vertex to);
++    void buildCompactGraph (const GeoGraph &graph);
++
++    // displaceR astar-speedup, compact graph: the same search as
++    // searchShortestPath() on a flat copy of the adjacency lists, built once.
++    bool mCompactEnabled = false;
++    std::vector<size_t> mOffsets;              // per vertex, into mTargets/mWeights
++    std::vector<GeoGraph::vertex> mTargets;    // out-edge targets, in Boost's order
++    std::vector<GeoGraph::cost> mWeights;
++    std::vector<GeoGraph::vertex> mPred;       // reused between searches
++    std::vector<GeoGraph::cost> mDist;
++
++    // displaceR astar-speedup, path cache: the graph never changes after loading, so a
++    // search is a pure function of (graph, from, to) and its result can be
++    // reused verbatim. See docs/speedup.md in displaceR.
++    std::mutex mCacheMutex;
++    const GeoGraph *mCacheGraph = nullptr;
++    std::unordered_map<uint64_t, std::vector<types::NodeId>> mCache;
++    size_t mCacheBytes = 0;
++    size_t mCacheBudget = 0;
++    bool mCacheStats = false;
++    uint64_t mHits = 0, mMisses = 0, mFlushes = 0;
+ };
+ 
+ 

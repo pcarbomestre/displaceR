@@ -26,6 +26,20 @@
   on a node (e.g. sizes the other fleet does not select), wiping them monthly;
   the patch leaves them unchanged. Needed whenever other landings and their
   selectivity file are used. See `docs/upstream-issues.md` 19.
+* Speed patches, results unchanged: `--patch astar-speedup` (DISPLACE's A*
+  heuristic passes longitude as latitude, so on the west coast it is always NaN
+  after a full geodesic computation; the patch returns that NaN directly,
+  memoises paths and runs the identical search on a flat copy of the graph) and
+  `--patch sample-table-cache` (`do_sample()` reuses its sorted table for
+  identical inputs). Every output byte-identical on westcoast calibrations 2.0,
+  3.1 and 4.0; a run is ~9-13x faster. See `docs/speedup.md`, which also records
+  that upstream's A* rarely returns the shortest path (median 7% longer).
+* `--patch reproducible-diffusion`: `diffusePopN` drew from a generator seeded
+  by `std::random_device`, so two runs with the same simulation name differed.
+  It is now seeded from the name like everything else. Changes results relative
+  to earlier runs, once.
+* `build-displace.yml` gains a `patches` input, so feature-patched Linux builds
+  come from CI; their asset names carry the patch list.
 * `docs/displace-patches.md` summarises every change this branch makes to
   DISPLACE v1.8.0 and how to build with them.
 * `run_displace_campaign()` gains `start_lag` (default 15 s): parallel

@@ -52,7 +52,7 @@ not change results (byte-identical outputs, see the log). Both are opt-in;
 without `--patch` the script builds plain upstream.
 
 For a Linux server build, run the same script on the Linux builder with both
-`--patch` flags; the CI workflow does not pass `--patch` yet.
+`--patch` flags, or run the CI workflow with its `patches` input.
 
 ## Check results (all on macOS arm64)
 
