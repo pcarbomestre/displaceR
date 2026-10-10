@@ -1,0 +1,556 @@
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 0b2b14e4..f70e98b4 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -3122,6 +3122,73 @@ void Vessel::find_next_point_on_the_graph_unlocked(vector<Node* >& nodes, int a_
+ }
+ 
+ 
++// displaceR timestep-accounting: move along the roadmap for at most `hours`.
++// Unlike find_next_point_on_the_graph_unlocked(), which always charges a full
++// step (or more, on the step that reaches the end of the roadmap), this charges
++// exactly the distance covered and the time it took, so the rest of the step
++// is left to the caller for the next action. The vessel passes through nodes
++// as long as the budget allows and then approaches the next node.
++double Vessel::move_within(vector<Node *> &nodes, int a_tstep, bool is_fishing_credits,
++                           double hours, bool &arrived)
++{
++    arrived = false;
++    if (roadmap.empty() || hours <= 0.0) return 0.0;
++
++    bool returning_to_harbour = nodes[roadmap.back().toIndex()]->get_is_harbour();
++    double kmh = get_speed() * NAUTIC;
++    double budget = hours * kmh; // km
++    double covered = 0.0;
++
++    while (!roadmap.empty()) {
++        Node *nxt = nodes[roadmap.front().toIndex()];
++        double d = dist(x, y, nxt->get_x(), nxt->get_y());
++        if (d != d) d = 0.0; // NaN guard on coincident points
++        if (d > 0.0) course = bearing(x, y, nxt->get_x(), nxt->get_y());
++        if (d <= budget) {
++            this->move_to(nxt);
++            next_x = nxt->get_x();
++            next_y = nxt->get_y();
++            x = next_x;
++            y = next_y;
++            roadmap.pop_front();
++            budget -= d;
++            covered += d;
++        } else {
++            vector<double> xy = destB(x, y, course, budget);
++            this->set_xy(xy[0], xy[1]);
++            covered += budget;
++            budget = 0.0;
++            break;
++        }
++    }
++    arrived = roadmap.empty();
++
++    double time_used = covered / kmh;
++    double fuel_multiplier = get_metier()->get_fuel_reduction_multiplier();
++    double mult = returning_to_harbour ? get_mult_fuelcons_when_returning() : get_mult_fuelcons_when_steaming();
++    set_cumfuelcons(get_cumfuelcons() + get_fuelcons() * time_used * mult * fuel_multiplier);
++    set_consotogetthere(get_consotogetthere() + get_fuelcons() * time_used * mult * fuel_multiplier);
++    set_cumsteaming(get_cumsteaming() + time_used);
++    set_timeatsea(get_timeatsea() + time_used);
++    if (get_hasfishedatleastonce()) set_timeatseasincefirstcatch(get_timeatseasincefirstcatch() + time_used);
++    set_traveled_dist_this_trip(get_traveled_dist_this_trip() + covered);
++    set_distprevpos(covered);
++    set_state(2);
++
++    if (is_fishing_credits && !arrived && (a_tstep % 2)) {
++        // as upstream: pay the tariff every two steps, also when steaming
++        double tariff_this_cell = this->get_loc()->get_tariffs().at(this->get_metier()->get_name()) *
++                                  this->get_metier()->get_met_multiplier_on_arbitary_breaks_for_tariff();
++        vector<double> fishing_credits = this->get_fishing_credits();
++        fishing_credits.at(0) = fishing_credits.at(0) - tariff_this_cell;
++        this->set_fishing_credits(fishing_credits);
++    }
++
++    this->add_segment(2, time_used, covered);
++    return time_used;
++}
++
++
+ //------------------------------------------------------------//
+ //------------------------------------------------------------//
+ // the catch process...
+@@ -3307,7 +3374,7 @@ Vessel::SweptAreaInfo Vessel::compute_swept_area(const VesselStaticData & v,
+ 
+     // swept area depends on metier type (trawler vs. static gear)
+     if (get_metier()->get_metier_type() == 1) {          // trawlers
+-        s.swept_area = s.gear_width * PING_RATE * NAUTIC * m.fspeed;
++        s.swept_area = s.gear_width * (PING_RATE * m_fishing_fraction) * NAUTIC * m.fspeed;
+         s.subsurf_area = s.swept_area * 0.329;           // penetration factor (Eigaard et al. 2016)
+     }
+     else {                                            // seiners / gillnets
+@@ -3806,7 +3873,8 @@ void Vessel::handle_explicit_population(
+         v.betas_per_pop[popIdx] +
+         m.betas_per_pop[popIdx] +
+         h.betas_per_pop[popIdx] +
+-        avaiBeta) * populations.at(popIdx)->get_cpue_multiplier() * this->get_metier()->get_catchrate_multiplier() * tech_creeping_multiplier;
++        avaiBeta) * populations.at(popIdx)->get_cpue_multiplier() * this->get_metier()->get_catchrate_multiplier() * tech_creeping_multiplier
++        * m_fishing_fraction; // displaceR timestep-accounting: partial_fishing (1 otherwise)
+ 
+    
+     double totCatchWeight = std::min(totAvail, catchPotential);
+@@ -4082,7 +4150,7 @@ void Vessel::handle_implicit_population(
+        //   discards_pop_at_szgroup[pop][sz]
+        //   ping_catch_pop_at_szgroup[pop][sz]
+        // For implicit stocks we only use the first size group (index 0).
+-    double weight = cpue * PING_RATE;            // kg caught during this ping
++    double weight = cpue * (PING_RATE * m_fishing_fraction);            // kg caught during this ping
+ 
+     // cumul
+     cr.landings[0] += weight;
+@@ -4311,7 +4379,7 @@ bool Vessel::maybe_close_ground(int groundIdx,
+             get_loc()->add_to_cumdiscards_per_pop(cr.totalDiscards, popIdx);
+             int met = this->get_metier()->get_name();
+             get_loc()->add_to_cumcatches_per_pop_per_met_this_month(cr.totalLandings, popIdx, met);
+-            get_loc()->add_to_cumeffort_per_pop_per_met_this_month(PING_RATE, popIdx, met);
++            get_loc()->add_to_cumeffort_per_pop_per_met_this_month((PING_RATE * m_fishing_fraction), popIdx, met);
+             get_loc()->compute_cpue_per_pop_per_met_this_month(popIdx, met); // i.e. cumcatch/cumeffort
+ 
+      
+@@ -4328,12 +4396,12 @@ bool Vessel::maybe_close_ground(int groundIdx,
+                     popIdx) += cr.totalLandings;
+             }
+             // effort
+-            this->cumeffort_per_trip_per_fgrounds.at(idx_node_r) += PING_RATE;
++            this->cumeffort_per_trip_per_fgrounds.at(idx_node_r) += (PING_RATE * m_fishing_fraction);
+             if (dyn_alloc_sce.option(Options::experiencedCPUEsPerYearQuarter)) {
+-                this->cumeffort_per_yearquarter_per_fgrounds.at(idx_node_r) += PING_RATE;
++                this->cumeffort_per_yearquarter_per_fgrounds.at(idx_node_r) += (PING_RATE * m_fishing_fraction);
+             }
+             if (dyn_alloc_sce.option(Options::experiencedCPUEsPerMet) || dyn_alloc_sce.option(Options::experiencedCPUEsPerYearQuarter)) {
+-                this->cumeffort_per_trip_per_fgrounds_per_met.at(idx_node_r).at(met) += PING_RATE;
++                this->cumeffort_per_trip_per_fgrounds_per_met.at(idx_node_r).at(met) += (PING_RATE * m_fishing_fraction);
+             }
+ 
+ 
+@@ -7535,6 +7603,8 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
+         if (dyn_alloc_sce.option(Options::fishing_credits)) is_fishing_credits = true;
+ 
+         // then, call to find.next.pt.on.the.graph()
++        // displaceR timestep-accounting: the caller moves within its time budget
++        if (!m_defer_move)
+         this-> find_next_point_on_the_graph_unlocked(nodes, tstep, is_fishing_credits);
+ 
+         // decide on the rest duration for the next time (drawn from a gamma law)
+@@ -8027,6 +8097,8 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
+     */
+ 
+     // find.next.pt.on.the.graph()
++    // displaceR timestep-accounting: the caller moves within its time budget
++    if (!m_defer_move)
+     this->find_next_point_on_the_graph_unlocked(nodes, tstep, is_fishing_credits);
+     unlock();
+ return 0;
+@@ -8283,6 +8355,7 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
+     this-> set_traveled_dist_this_trip(0);
+     this-> set_natio(true);
+     this->set_tstep_dep(0);
++    this->m_time_carry = 0.0; // displaceR timestep-accounting
+     this->reset_message();
+     //this->set_reason_to_go_back(0);
+     outc(cout << "reinit after a trip...OK" << "\n");
+diff --git a/commons/options.cpp b/commons/options.cpp
+index 458abc21..877033a3 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -98,6 +98,8 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, unlimitedTankCap);
+     O(mMap, unlimitedCarryCap);
+     O(mMap, grounds_by_port);
++    O(mMap, timestep_accounting);
++    O(mMap, partial_fishing);
+   
+ 
+ 
+diff --git a/include/Vessel.h b/include/Vessel.h
+index 9e605ea3..f4c9f648 100644
+--- a/include/Vessel.h
++++ b/include/Vessel.h
+@@ -965,5 +965,36 @@ public:
+     static std::vector<std::shared_ptr<dtree::StateEvaluator> > mStateEvaluators;
+ 
+     static std::string nationalityFromName(const std::string &name);
++
++    // displaceR timestep-accounting (dyn_alloc option timestep_accounting):
++    // a step is a 1 h time budget that the vessel spends on several actions
++    // (moving, fishing, deciding) instead of one action per step. Unused with
++    // the option off, so upstream behaviour is unchanged.
++    struct TimeSegment {
++        int state;          // 1 fishing, 2 steaming (as get_state())
++        double hours;       // duration of the segment
++        double km;          // distance moved in the segment
++        double x, y, course, cumfuel; // vessel at the end of the segment
++    };
++    double get_time_carry() const { return m_time_carry; }
++    void set_time_carry(double h) { m_time_carry = h; }
++    bool get_defer_move() const { return m_defer_move; }
++    void set_defer_move(bool d) { m_defer_move = d; }
++    double get_fishing_fraction() const { return m_fishing_fraction; }
++    void set_fishing_fraction(double f) { m_fishing_fraction = f; }
++    const std::vector<TimeSegment> &get_segments() const { return m_segments; }
++    void clear_segments() { m_segments.clear(); }
++    void add_segment(int a_state, double hours, double km)
++    { m_segments.push_back(TimeSegment{a_state, hours, km, x, y, course, cumfuelcons}); }
++    // Moves along the roadmap for at most `hours`; charges exactly the time and
++    // distance covered; sets `arrived` when the roadmap is completed. Returns
++    // the hours used. Caller holds the vessel lock.
++    double move_within(std::vector<Node *> &nodes, int a_tstep, bool is_fishing_credits,
++                       double hours, bool &arrived);
++private:
++    double m_time_carry = 0.0;       // unused part of earlier steps (h), reset after a trip
++    bool m_defer_move = false;       // choose_*_and_go_fishing set the roadmap but do not move
++    double m_fishing_fraction = 1.0; // hours fished in this action (partial_fishing)
++    std::vector<TimeSegment> m_segments; // this step's segments, for vmslike
+ };
+ #endif							 // VESSEL_H
+diff --git a/include/options.h b/include/options.h
+index 16101ab8..58647267 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -156,6 +156,8 @@ enum Dyn_Alloc {
+     unlimitedTankCap,
+     unlimitedCarryCap,
+     grounds_by_port,     // grounds tagged by port, trips return to the trip port
++    timestep_accounting, // displaceR timestep-accounting: a step is a 1 h budget spent on several actions, vmslike in segments
++    partial_fishing,     // displaceR timestep-accounting: fishing in fractions of an hour (needs timestep_accounting)
+ 
+ 
+     Dyn_Alloc_last
+diff --git a/simulator/main.cpp b/simulator/main.cpp
+index 99b763bc..8270df5a 100644
+--- a/simulator/main.cpp
++++ b/simulator/main.cpp
+@@ -735,6 +735,7 @@ int app_main(int argc, char const* argv[])
+     std::shared_ptr<ModelMetadataAccessor> metadata = nullptr;
+     OutputExporter::instance().setUseSqlite(enable_sqlite_out);
+     OutputExporter::instance().setExportTripPort(scenario.dyn_alloc_sce.option(Options::grounds_by_port));
++    OutputExporter::instance().setSegmentedVmsLike(scenario.dyn_alloc_sce.option(Options::timestep_accounting)); // displaceR timestep-accounting
+ 
+     try {
+         if (enable_sqlite_out) {
+diff --git a/simulator/outputexporter.cpp b/simulator/outputexporter.cpp
+index 12fbae24..9fa2ff97 100644
+--- a/simulator/outputexporter.cpp
++++ b/simulator/outputexporter.cpp
+@@ -43,6 +43,34 @@ void OutputExporter::exportVmsLikePlaintext(unsigned int tstep, Vessel *vessel)
+ {
+     std::unique_lock<std::mutex> locker(glob_mutex);
+ 
++    // displaceR timestep-accounting: one row per segment of the step (its own
++    // state and end position), plus seg, hours and km. A step without a
++    // segment (vessel stuck, or the departure row at tstep 0) is one row with
++    // hours and km 0.
++    if (segmentedVmsLike) {
++        const auto &segs = vessel->get_segments();
++        if (segs.empty()) {
++            mVmsLike << tstep << " " << vessel->get_name() << " " << vessel->get_tstep_dep() << " "
++                     << setprecision(3) << fixed << vessel->get_x() << " "
++                     << setprecision(3) << fixed << vessel->get_y() << " "
++                     << setprecision(0) << fixed << vessel->get_course() << " "
++                     << setprecision(0) << fixed << vessel->get_cumfuelcons() << " "
++                     << vessel->get_state() << " 1 "
++                     << setprecision(4) << fixed << 0.0 << " " << setprecision(3) << fixed << 0.0 << " \n";
++        }
++        for (size_t i = 0; i < segs.size(); ++i) {
++            mVmsLike << tstep << " " << vessel->get_name() << " " << vessel->get_tstep_dep() << " "
++                     << setprecision(3) << fixed << segs[i].x << " "
++                     << setprecision(3) << fixed << segs[i].y << " "
++                     << setprecision(0) << fixed << segs[i].course << " "
++                     << setprecision(0) << fixed << segs[i].cumfuel << " "
++                     << segs[i].state << " " << (i + 1) << " "
++                     << setprecision(4) << fixed << segs[i].hours << " "
++                     << setprecision(3) << fixed << segs[i].km << " \n";
++        }
++        return;
++    }
++
+     mVmsLike << tstep << " "
+                 //<< vessels[ index_v ]->get_idx() << " "
+              << vessel->get_name() << " "
+diff --git a/simulator/outputexporter.h b/simulator/outputexporter.h
+index 5c4ce062..10622faa 100644
+--- a/simulator/outputexporter.h
++++ b/simulator/outputexporter.h
+@@ -23,6 +23,7 @@ class OutputExporter
+     bool usePlainText = true;
+     // grounds_by_port: append the trip port and the departure port to each loglike line
+     bool exportTripPort = false;
++    bool segmentedVmsLike = false; // displaceR timestep-accounting
+     std::shared_ptr<SQLiteOutputStorage> mSqlDb;
+ public:
+     OutputExporter(const std::string &basepath, const std::string &namesimu);
+@@ -48,6 +49,9 @@ public:
+ 
+     void setExportTripPort(bool tp)
+     { exportTripPort = tp; }
++    // displaceR timestep-accounting: one vmslike row per segment, with seg, hours, km
++    void setSegmentedVmsLike(bool s)
++    { segmentedVmsLike = s; }
+ 
+     void setSQLiteDb(std::shared_ptr<SQLiteOutputStorage> db)
+     { mSqlDb = db; }
+diff --git a/simulator/thread_vessels.cpp b/simulator/thread_vessels.cpp
+index 9f865034..a5939694 100644
+--- a/simulator/thread_vessels.cpp
++++ b/simulator/thread_vessels.cpp
+@@ -169,6 +169,234 @@ static void manage_ship(SimModel &model, int idx_v)
+ }
+ 
+ 
++// displaceR timestep-accounting (dyn_alloc option timestep_accounting).
++//
++// Upstream gives a vessel one action per 1 h step: a move charges the time it
++// took, but a vessel that reaches its destination mid-step waits out the rest
++// of the step; deciding to stop fishing takes a whole step (the vessel neither
++// fishes nor moves); and the logbook is written one step after the vessel is
++// back in port. Here the step is a 1 h time budget that the vessel spends on
++// as many actions as fit: reach the ground and (when a full hour is left, or
++// with partial_fishing any fraction) fish, decide to stop and head home, reach
++// port and declare the trip, all within the step. Each action that takes time
++// is a segment (Vessel::add_segment) exported as its own vmslike row.
++//
++// Without partial_fishing a fishing action takes a whole hour, so the part of a
++// step left after reaching a ground (< 1 h) is carried to the next step
++// (Vessel time carry): that step has 1 h + the carry to spend, and so on, until
++// a move uses it up. The carry is dropped when the trip ends.
++//
++// The decisions are the upstream ones, in the upstream order; only when they
++// are taken changes. Kept as a separate function so that with the option off
++// manage_vessel() runs the upstream code untouched.
++static void manage_vessel_timebudget(std::shared_ptr<SimModel> model, int index_v,
++                                     vector<int> &listVesselIdForLogLikeToExport,
++                                     vector<int> &listVesselIdForTripCatchPopPerSzgroupExport)
++{
++    Vessel *vessel = model->vessels()[index_v];
++    const bool partial_fishing = model->scenario().dyn_alloc_sce.option(Options::partial_fishing);
++    const bool is_fishing_credits = model->scenario().dyn_alloc_sce.option(Options::fishing_credits);
++    const double eps = 1e-9;
++    vector<double> dist_to_ports;
++
++    vessel->lock();
++    vessel->clear_segments();
++    double budget = PING_RATE + vessel->get_time_carry();
++    vessel->set_time_carry(0.0);
++    vessel->unlock();
++
++    bool freshly_departed_from_port = false;
++    bool fish_without_deciding = false; // upstream fishes right away on a ground just changed to
++    bool changed_ground = false;
++
++    for (int action = 0; action < 50; ++action) {
++        vessel->lock();
++        bool roadmap_empty = vessel->get_roadmap().empty();
++        int possible_metiers_size = vessel->get_possible_metiers().size();
++        bool inharbour = vessel->get_inharbour();
++        bool inactive = vessel->get_inactive();
++        vessel->unlock();
++
++        // ---- on the way: move for what is left of the step
++        if (!roadmap_empty) {
++            if (budget <= eps) break;
++            bool arrived = false;
++            vessel->lock();
++            double used = vessel->move_within(model->nodes(), model->timestep(), is_fishing_credits, budget, arrived);
++            vessel->unlock();
++            budget -= used;
++            if (!arrived) break;
++            fish_without_deciding = changed_ground;
++            changed_ground = false;
++            continue;
++        }
++
++        if (possible_metiers_size <= 1) break; // inactive this quarter (as upstream)
++
++        // ---- in port
++        if (inharbour) {
++            if (!inactive) {
++                // just arrived: land the catches and declare in the logbook (as upstream, one step earlier)
++                vessel->updateTripsStatistics(model->populations(), model->config().implicit_pops,
++                                              model->timestep(), model->scenario().dyn_alloc_sce);
++                mOutQueue.enqueue(std::shared_ptr<OutputMessage>(
++                        new VesselLogbookOutputMessage(model->timestep(), vessel,
++                                                       model->populations(), model->config().implicit_pops)));
++                std::unique_lock<std::mutex> m(listVesselMutex);
++                listVesselIdForLogLikeToExport.push_back(index_v);
++                if (vessel->get_vid_is_part_of_ref_fleet())
++                    listVesselIdForTripCatchPopPerSzgroupExport.push_back(index_v);
++                break; // the rest of the step is spent in port
++            }
++            if (action > 0) break; // one departure decision per step
++            vessel->which_metier_should_i_go_for(model->metiers(), model->nodes(), model->scenario().dyn_alloc_sce);
++            int go_fishing = vessel->should_i_go_fishing(model->timestep(), model->populations(),
++                                                         model->scenario().use_dtrees,
++                                                         model->scenario().dyn_alloc_sce,
++                                                         model->config().implicit_pops,
++                                                         model->scenario().is_individual_vessel_quotas,
++                                                         model->scenario().check_all_stocks_before_going_fishing);
++            bool do_nothing = 0;
++            if (go_fishing) {
++                vessel->set_defer_move(true);
++                do_nothing = vessel->choose_a_ground_and_go_fishing(
++                        *model, model->timestep(), model->scenario(), model->scenario().use_dtrees,
++                        model->scenario().dyn_alloc_sce, use_static_paths, pathshops,
++                        adjacency_map, relevant_nodes, nodes_in_polygons, model->nodes(), model->metiers(),
++                        freq_cpue, freq_profit, freq_distance);
++                vessel->set_defer_move(false);
++                freshly_departed_from_port = true;
++            }
++            if (!go_fishing || do_nothing) {
++                vessel->set_timeforrest(vessel->get_timeforrest() - PING_RATE);
++                vessel->set_next_xy(vessel->get_x(), vessel->get_y());
++                vessel->reset_message();
++                break;
++            }
++            budget = PING_RATE; // the trip starts with this step
++            continue;
++        }
++
++        // ---- on a fishing ground
++        if (budget <= eps) break;
++        if (!partial_fishing && budget < PING_RATE - eps) break; // not a full hour left: carry it
++
++        int stop_fishing = 0;
++        bool force_another_ground = false;
++        int shall_I_change_to_another_ground = 0;
++        if (!fish_without_deciding) {
++            map<string, int> external_states_relevant_for_stopping_fishing;
++            external_states_relevant_for_stopping_fishing.insert(make_pair(" none ", 0));
++            stop_fishing = vessel->should_i_stop_fishing(
++                    *model, external_states_relevant_for_stopping_fishing, model->scenario().use_dtrees,
++                    model->timestep(), model->scenario().dyn_alloc_sce, use_static_paths, pathshops,
++                    adjacency_map, relevant_nodes, model->nodes(), model->metiers(),
++                    freq_cpue, freq_distance, dist_to_ports);
++            if (vessel->read_message() == 1) {
++                if (vessel->get_fgrounds().size() < 3) {
++                    vessel->set_reason_to_go_back(4);
++                    stop_fishing = true;
++                }
++                force_another_ground = true;
++                vessel->reset_message();
++            }
++        }
++        fish_without_deciding = false;
++
++        if (stop_fishing) {
++            // head home now, within this step
++            glob_mutex.lock();
++            vessel->choose_a_port_and_then_return(*model, model->timestep(), model->scenario().dyn_alloc_sce,
++                                                  use_static_paths, pathshops, adjacency_map, relevant_nodes,
++                                                  model->nodes(), model->metiers(), freq_cpue, freq_distance,
++                                                  dist_to_ports);
++            glob_mutex.unlock();
++            if (vessel->get_roadmap().empty()) break; // no path: stuck, as upstream
++            continue;
++        }
++        freshly_departed_from_port = false;
++
++        if (!force_another_ground) {
++            map<string, int> external_states_relevant_for_change_ground;
++            external_states_relevant_for_change_ground.insert(make_pair(" none ", 0));
++            shall_I_change_to_another_ground = vessel->should_i_change_ground(
++                    *model, external_states_relevant_for_change_ground, model->scenario().use_dtrees);
++        }
++        int is_not_possible_to_change = 0;
++        if (shall_I_change_to_another_ground || force_another_ground) {
++            vessel->set_defer_move(true);
++            is_not_possible_to_change = vessel->choose_another_ground_and_go_fishing(
++                    *model, model->timestep(), model->scenario().dyn_alloc_sce, use_static_paths, pathshops,
++                    adjacency_map, relevant_nodes, nodes_in_polygons, model->nodes(), model->metiers(),
++                    freq_cpue, freq_distance);
++            vessel->set_defer_move(false);
++            if (is_not_possible_to_change && force_another_ground) {
++                glob_mutex.lock();
++                vessel->choose_a_port_and_then_return(*model, model->timestep(), model->scenario().dyn_alloc_sce,
++                                                      use_static_paths, pathshops, adjacency_map, relevant_nodes,
++                                                      model->nodes(), model->metiers(), freq_cpue, freq_distance,
++                                                      dist_to_ports);
++                vessel->set_reason_to_go_back(4);
++                glob_mutex.unlock();
++                if (vessel->get_roadmap().empty()) break;
++                continue;
++            }
++            if (!vessel->get_roadmap().empty()) {
++                changed_ground = true; // upstream fishes on arrival without a new decision
++                continue;
++            }
++        }
++
++        // ---- fish for a full hour, or (partial_fishing) for what is left of the step
++        double fraction = partial_fishing ? std::min(budget, (double)PING_RATE) : (double)PING_RATE;
++        vessel->set_fishing_fraction(fraction / PING_RATE);
++        vessel->do_catch(model->scenario().dyn_alloc_sce, export_individual_tacs,
++                         model->timestep(), model->month(), model->quarter(),
++                         model->populations(), model->nodes(), benthoss,
++                         model->config().implicit_pops, model->config().grouped_tacs,
++                         model->timestep(), model->scenario().graph_res,
++                         model->is_tacs(), model->scenario().is_individual_vessel_quotas,
++                         model->scenario().check_all_stocks_before_going_fishing,
++                         model->is_discard_ban(), model->is_realtime_closure(), model->is_grouped_tacs(),
++                         tech_creeping_multiplier, model->is_fishing_credits(),
++                         model->is_direct_killing_on_benthos(), model->is_resuspension_effect_on_benthos(),
++                         model->is_benthos_in_numbers());
++        vessel->set_fishing_fraction(1.0);
++
++        vessel->lock();
++        vessel->set_timeatsea(vessel->get_timeatsea() + fraction);
++        vessel->set_hasfishedatleastonce(1);
++        vessel->set_timeatseasincefirstcatch(vessel->get_timeatseasincefirstcatch() + fraction);
++        vessel->set_state(1);
++        double fuel_per_h_scaling_a = vessel->get_fuelcons() / pow(vessel->get_speed(), 3);
++        double actual_speed = vessel->get_speed();
++        double litre_fuel = fuel_per_h_scaling_a * pow(actual_speed, 3);
++        double cumfuelcons;
++        if (vessel->get_metier()->get_metier_type() == 1) {
++            cumfuelcons = vessel->get_cumfuelcons() + litre_fuel * fraction *
++                          vessel->get_mult_fuelcons_when_fishing() *
++                          vessel->get_metier()->get_fuel_reduction_multiplier();
++        } else {
++            cumfuelcons = vessel->get_cumfuelcons() + litre_fuel * fraction *
++                          vessel->get_mult_fuelcons_when_inactive() *
++                          vessel->get_metier()->get_fuel_reduction_multiplier();
++        }
++        vessel->set_cumfuelcons(cumfuelcons);
++        vessel->get_loc()->add_to_cumftime(fraction);
++        vessel->add_segment(1, fraction, 0.0);
++        vessel->unlock();
++        budget -= fraction;
++    }
++
++    // what is left of the step on a ground (less than a full fishing hour) is
++    // carried to the next step; in port it is dropped
++    vessel->lock();
++    if (!vessel->get_inharbour() && budget > eps) vessel->set_time_carry(budget);
++    vessel->unlock();
++    (void)freshly_departed_from_port;
++}
++
++
+ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+                           vector<int> &listVesselIdForVmsLikeToExport,
+                           vector<int> &listVesselIdForVmsLikeFPingsOnlyToExport,
+@@ -197,6 +425,11 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+    
+ 
+     if (!is_exited) {
++        // displaceR timestep-accounting: the step as a time budget (see above)
++        if (model->scenario().dyn_alloc_sce.option(Options::timestep_accounting)) {
++            manage_vessel_timebudget(model, index_v, listVesselIdForLogLikeToExport,
++                                     listVesselIdForTripCatchPopPerSzgroupExport);
++        } else {
+         if (roadmap_empty) {
+             // check if the vessel is actually active this quarter
+             // (when at least one possible metier within this quarter)
+@@ -653,6 +886,7 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+         //}
+ 
+     }
++        } // displaceR timestep-accounting
+         outc(cout << "\n");
+ 
+         // write this movement in the output  file (hourly data if PING=1)
