@@ -385,10 +385,10 @@ index 5c4ce062..10622faa 100644
      void setSQLiteDb(std::shared_ptr<SQLiteOutputStorage> db)
      { mSqlDb = db; }
 diff --git a/simulator/thread_vessels.cpp b/simulator/thread_vessels.cpp
-index 9f865034..a5939694 100644
+index 9f865034..71794a18 100644
 --- a/simulator/thread_vessels.cpp
 +++ b/simulator/thread_vessels.cpp
-@@ -169,6 +169,234 @@ static void manage_ship(SimModel &model, int idx_v)
+@@ -169,6 +169,237 @@ static void manage_ship(SimModel &model, int idx_v)
  }
  
  
@@ -431,6 +431,7 @@ index 9f865034..a5939694 100644
 +    bool freshly_departed_from_port = false;
 +    bool fish_without_deciding = false; // upstream fishes right away on a ground just changed to
 +    bool changed_ground = false;
++    bool carry_left = false; // only a ground with less than a full fishing hour left carries the rest
 +
 +    for (int action = 0; action < 50; ++action) {
 +        vessel->lock();
@@ -502,7 +503,7 @@ index 9f865034..a5939694 100644
 +
 +        // ---- on a fishing ground
 +        if (budget <= eps) break;
-+        if (!partial_fishing && budget < PING_RATE - eps) break; // not a full hour left: carry it
++        if (!partial_fishing && budget < PING_RATE - eps) { carry_left = true; break; } // not a full hour left: carry it
 +
 +        int stop_fishing = 0;
 +        bool force_another_ground = false;
@@ -612,9 +613,11 @@ index 9f865034..a5939694 100644
 +    }
 +
 +    // what is left of the step on a ground (less than a full fishing hour) is
-+    // carried to the next step; in port it is dropped
++    // carried to the next step; anything else left (in port, stuck without a
++    // path, inactive, action limit) is dropped, so the carry stays < 1 h
 +    vessel->lock();
-+    if (!vessel->get_inharbour() && budget > eps) vessel->set_time_carry(budget);
++    if (carry_left && !vessel->get_inharbour() && budget > eps)
++        vessel->set_time_carry(std::min(budget, (double)PING_RATE - eps));
 +    vessel->unlock();
 +    (void)freshly_departed_from_port;
 +}
@@ -623,7 +626,7 @@ index 9f865034..a5939694 100644
  static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
                            vector<int> &listVesselIdForVmsLikeToExport,
                            vector<int> &listVesselIdForVmsLikeFPingsOnlyToExport,
-@@ -197,6 +425,11 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+@@ -197,6 +428,11 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
     
  
      if (!is_exited) {
@@ -635,7 +638,7 @@ index 9f865034..a5939694 100644
          if (roadmap_empty) {
              // check if the vessel is actually active this quarter
              // (when at least one possible metier within this quarter)
-@@ -653,6 +886,7 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+@@ -653,6 +889,7 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
          //}
  
      }
