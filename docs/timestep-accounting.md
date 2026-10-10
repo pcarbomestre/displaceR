@@ -71,7 +71,10 @@ are taken in a loop until the budget is spent:
   i.e. upstream's multi-node formula; upstream's one-node branch applies the
   metier fuel multiplier twice, which this does not copy) and
   `consotogetthere`. If the roadmap is completed the loop continues with what
-  is left.
+  is left. A node within 1e-6 km of what is left of the budget counts as
+  reached (rounding of the budget otherwise left the vessel 1e-12 km short of
+  it and arriving a step late); at speed 0 the vessel does not move (0 h, no
+  0/0).
 - **in port, trip not declared** (just arrived): declare in this step (same
   calls as upstream), and the rest of the step is spent in port. The logbook's
   arrival tstep is the arrival step (one earlier than upstream), and port time
@@ -84,13 +87,19 @@ are taken in a loop until the budget is spent:
   moves home with what is left of the step (the stop decision no longer takes
   a step). Change: the roadmap is set without moving and the loop moves; if the
   new ground is reached within the step the vessel fishes there without new
-  decisions (as upstream does). Otherwise: fish.
+  decisions (as upstream does). That flag is kept on the vessel
+  (`Vessel::get_fish_without_deciding`, cleared when used and in
+  `reinit_after_a_trip`), so it still holds when the step runs out between
+  reaching the ground and fishing. Otherwise: fish.
 - **fish**: `do_catch()` and the upstream fishing bookkeeping for one hour.
   A fishing action needs a full hour of budget (upstream's catch is per hour);
   when less than an hour is left on a ground the rest is carried
   (`Vessel::set_time_carry`) to the next step, which then has 1 h + carry. The
   carry is spent by the next move and dropped when the trip ends
-  (`reinit_after_a_trip`). This is how step 1 "starts fishing within the
+  (`reinit_after_a_trip`). Only this break carries: what is left when the
+  loop ends any other way (in port, no path home, inactive quarter, action
+  limit) is dropped, and the carry is capped below 1 h, so it cannot grow
+  from step to step. This is how step 1 "starts fishing within the
   step": the vessel's work catches up with the calendar over the trip, so
   calendar hours at sea = work hours + the last carry (< 1 h).
 
@@ -118,16 +127,28 @@ the sum of `km` equals `traveled_dist` (see Verification).
 ## Step 3: partial-hour fishing (option `partial_fishing`)
 
 A fishing action takes `min(budget, 1 h)` instead of a full hour, so a step
-can be 0.4 h steaming + 0.6 h fishing and there is no carry at sea. The catch
+can be 0.4 h steaming + 0.6 h fishing and there is no carry at sea. The
+shortest fishing action is 0.05 h: a rest of the step on a ground shorter
+than that (e.g. a ground reached 0.01 h before the end of the step) is dropped
+(the vessel waits: no catch, no decision, no time charged), because a fishing
+action of any length runs the whole `do_catch()` (random draws per implicit
+stock, tariffs, metier-used and bycatch bookkeeping). Not carried, so no step
+holds more than 1 h. The catch
 and its side effects scale with the fraction through `Vessel::m_fishing_fraction`
 (1.0 otherwise), used in the 1.8.0 `do_catch()` path only:
 
 - explicit stocks: `catchPotential` (the per-hour catch) times the fraction;
 - implicit stocks (incl. out-of-range-implicit): `weight = cpue * fraction`;
-- swept area (benthos), effort per node/metier/pop (`cumeffort_*`,
-  `add_to_cumeffort_per_pop_per_met_this_month`) times the fraction;
+- swept area (benthos; trawl and static gear), effort per node/metier/pop
+  (`cumeffort_*`, `add_to_cumeffort_per_pop_per_met_this_month`) times the
+  fraction;
 - fishing fuel, `timeatsea`, `timeatseasincefirstcatch`, node `cumftime` add the
-  fraction.
+  fraction. `Node::cumftime` is a double (it was an `int`, which truncated
+  every fraction: in the first version `popnodes_cumftime` was 2.2% below the
+  vmslike fishing hours over 13 years); `popnodes_cumftime` prints whole hours
+  as before (byte-identical with the options off) and fractions with the
+  file's 8 decimals, and the tariff/effort updates in `fisheriesmanagmt.cpp`
+  read the exact value.
 
 Not scaled: `do_catch_v150` (not used), the stop/change decisions (still taken
 before each fishing action, so a short leftover is one more decision, as an
