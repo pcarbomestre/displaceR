@@ -135,4 +135,70 @@ extra hour would be), and per-event outputs that count events rather than hours.
 
 ## Verification
 
-See the end of this file (filled in from the westcoast 7.47 test runs).
+westcoast calibration 7.47 inputs (copy), `baseline` scenario (`grounds_by_port
+out_of_range_implicit shortest_paths`, `diffusePopN`), simu1, 26,305 steps (3
+years), `-e13 --huge=1 --disable-sqlite`, 1 thread, sequoia (GRIT), builds with
+conda-forge Boost 1.92 / GeographicLib (2026-10-10). Accounting with
+`compare.R` (per trip, loglike matched to vmslike on vessel and tstep_dep;
+totals for trips departing in years 1-3).
+
+**Builds.** `8-patch` = this script with the eight westcoast patches;
+`8-patch + timestep-accounting` = the same plus this patch.
+
+**(a) 8-patch rebuild vs the calibration binary** (CI release
+1.8.0-96eadecb-westcoast-repro): 37 of the 39 output files byte-identical,
+including vmslike, loglike, popstats; `memstats` differs (expected) and
+`popdyn_annual_indic` differs in one printed value (year 2 F of one stock,
+0.0004 vs 0.0003, a 4th-decimal rounding flip).
+
+**(b) patched build, options off vs the calibration binary**: 38 of 39 files
+byte-identical (all but `memstats`), so the patch with the options off is the
+8-patch model. (The rebuild in (a) and this run differ in that same single
+`popdyn_annual_indic` value, so that flip is not caused by the patch.)
+
+**(c) `timestep_accounting` on** (steps 1-2):
+
+| years 1-3 | 8-patch | timestep_accounting | change |
+|---|---|---|---|
+| trips | 20,402 | 20,673 | +1.3% |
+| vmslike rows at sea (state 1/2 steps) | 730,593 | 672,526 | -7.9% |
+| vmslike fishing rows | 413,531 | 406,602 | -1.7% |
+| vmslike steaming rows | 317,062 | 265,924 | -16.1% |
+| segment hours fishing / steaming | - | 406,602 / 255,328 | |
+| logbook timeatsea (h) | 696,343 | 661,312 | -5.0% |
+| logbook fishing (timeatsea - cumsteaming) | 393,608 | 406,218 | +3.2% |
+| logbook cumsteaming | 302,735 | 255,094 | -15.7% |
+| logbook arr - dep (steps) | 709,231 | 651,229 | -8.2% |
+| distance (traveled_dist, km) | 4,105,568 | 3,451,454 | -15.9% |
+| fuel | 23,247,705 | 21,103,543 | -9.2% |
+| catch (t, loglike pops 1-5) | 91,192 | 94,173 | +3.3% |
+| mean trip (steps) | 34.8 | 31.5 | |
+| run time | 5:03 | 5:05 | |
+
+Per trip (mean [p5, p95]):
+
+| | 8-patch | timestep_accounting |
+|---|---|---|
+| vmslike rows - (arr - dep) | 1.00 | 1.00 |
+| steaming rows - cumsteaming | 0.69 [0.2, 1.4] | 0.51 [0.1, 1.0] |
+| fishing rows - (timeatsea - cumsteaming) | 0.94 [0, 1] | 0.00 [0, 0] |
+| rows at sea - timeatsea | 1.63 [1.2, 2.0] | 0.51 [0.1, 1.0] |
+| segment steaming hours - cumsteaming | - | 0.00 [-0.04, 0.04] (loglike rounds to 0.1 h) |
+| segment fishing hours - fishing | - | 0.00 |
+| segment km - traveled_dist | - | 0.01 [-0.45, 0.45] (loglike rounds to 0.1 km) |
+
+Reading: the stop step and the declaring step are gone (fishing rows = fishing
+hours exactly; a trip has arr - dep + 1 rows where the last is the arrival
+step). Summing segment hours reproduces the logbook exactly. Counting rows still
+overstates time at sea by ~0.5 h per trip: the arrival step in port is a
+partial hour, and the carry (vessel waiting less than a full fishing hour on a
+ground, 0.5 h on average) is time the calendar spends that the logbook does
+not. 19,001 of 672,526 steps hold more than 1 h of work (carry spent), 39,561
+less (arrival steps); multi-segment steps are rare (232) because without
+partial fishing a fishing action needs the whole hour.
+
+The biggest effect is not the leftover itself but upstream's charging: it
+charges a full hour (or more) on every step that reaches a destination, and
+the same for distance, so upstream steaming time and distance are ~16% higher
+than the movement the vessels actually make. Fuel follows (-9%). With less
+time lost per trip, vessels fish ~3% more hours and catch ~3% more.
