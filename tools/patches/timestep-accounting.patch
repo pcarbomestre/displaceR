@@ -48,7 +48,7 @@ index d5f26261..81b4a010 100644
  }
  
 diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
-index 0b2b14e4..20560377 100644
+index 0b2b14e4..26586d61 100644
 --- a/commons/Vessel.cpp
 +++ b/commons/Vessel.cpp
 @@ -3122,6 +3122,76 @@ void Vessel::find_next_point_on_the_graph_unlocked(vector<Node* >& nodes, int a_
@@ -204,11 +204,12 @@ index 0b2b14e4..20560377 100644
      this->find_next_point_on_the_graph_unlocked(nodes, tstep, is_fishing_credits);
      unlock();
  return 0;
-@@ -8283,6 +8358,7 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
+@@ -8283,6 +8358,8 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
      this-> set_traveled_dist_this_trip(0);
      this-> set_natio(true);
      this->set_tstep_dep(0);
 +    this->m_time_carry = 0.0; // displaceR timestep-accounting
++    this->m_fish_without_deciding = false;
      this->reset_message();
      //this->set_reason_to_go_back(0);
      outc(cout << "reinit after a trip...OK" << "\n");
@@ -266,10 +267,10 @@ index 0b9d10e8..a85c6eee 100644
          double cumsubsurfacesweptarea;
          double cumcatches;
 diff --git a/include/Vessel.h b/include/Vessel.h
-index 9e605ea3..f4c9f648 100644
+index 9e605ea3..c7b0c065 100644
 --- a/include/Vessel.h
 +++ b/include/Vessel.h
-@@ -965,5 +965,36 @@ public:
+@@ -965,5 +965,39 @@ public:
      static std::vector<std::shared_ptr<dtree::StateEvaluator> > mStateEvaluators;
  
      static std::string nationalityFromName(const std::string &name);
@@ -287,6 +288,8 @@ index 9e605ea3..f4c9f648 100644
 +    double get_time_carry() const { return m_time_carry; }
 +    void set_time_carry(double h) { m_time_carry = h; }
 +    bool get_defer_move() const { return m_defer_move; }
++    bool get_fish_without_deciding() const { return m_fish_without_deciding; }
++    void set_fish_without_deciding(bool f) { m_fish_without_deciding = f; }
 +    void set_defer_move(bool d) { m_defer_move = d; }
 +    double get_fishing_fraction() const { return m_fishing_fraction; }
 +    void set_fishing_fraction(double f) { m_fishing_fraction = f; }
@@ -302,6 +305,7 @@ index 9e605ea3..f4c9f648 100644
 +private:
 +    double m_time_carry = 0.0;       // unused part of earlier steps (h), reset after a trip
 +    bool m_defer_move = false;       // choose_*_and_go_fishing set the roadmap but do not move
++    bool m_fish_without_deciding = false; // reached a ground just changed to: next fishing action without decisions
 +    double m_fishing_fraction = 1.0; // hours fished in this action (partial_fishing)
 +    std::vector<TimeSegment> m_segments; // this step's segments, for vmslike
  };
@@ -393,10 +397,10 @@ index 5c4ce062..10622faa 100644
      void setSQLiteDb(std::shared_ptr<SQLiteOutputStorage> db)
      { mSqlDb = db; }
 diff --git a/simulator/thread_vessels.cpp b/simulator/thread_vessels.cpp
-index 9f865034..80653a7e 100644
+index 9f865034..0bed0533 100644
 --- a/simulator/thread_vessels.cpp
 +++ b/simulator/thread_vessels.cpp
-@@ -169,6 +169,243 @@ static void manage_ship(SimModel &model, int idx_v)
+@@ -169,6 +169,245 @@ static void manage_ship(SimModel &model, int idx_v)
  }
  
  
@@ -442,7 +446,9 @@ index 9f865034..80653a7e 100644
 +    vessel->unlock();
 +
 +    bool freshly_departed_from_port = false;
-+    bool fish_without_deciding = false; // upstream fishes right away on a ground just changed to
++    // upstream fishes right away (no stop/change decision) on a ground just
++    // changed to; kept on the vessel so that it holds when the step runs out
++    // between reaching the ground and fishing (Vessel::get_fish_without_deciding)
 +    bool changed_ground = false;
 +    bool carry_left = false; // only a ground with less than a full fishing hour left carries the rest
 +
@@ -463,7 +469,7 @@ index 9f865034..80653a7e 100644
 +            vessel->unlock();
 +            budget -= used;
 +            if (!arrived) break;
-+            fish_without_deciding = changed_ground;
++            vessel->set_fish_without_deciding(changed_ground);
 +            changed_ground = false;
 +            continue;
 +        }
@@ -522,7 +528,7 @@ index 9f865034..80653a7e 100644
 +        int stop_fishing = 0;
 +        bool force_another_ground = false;
 +        int shall_I_change_to_another_ground = 0;
-+        if (!fish_without_deciding) {
++        if (!vessel->get_fish_without_deciding()) {
 +            map<string, int> external_states_relevant_for_stopping_fishing;
 +            external_states_relevant_for_stopping_fishing.insert(make_pair(" none ", 0));
 +            stop_fishing = vessel->should_i_stop_fishing(
@@ -539,7 +545,7 @@ index 9f865034..80653a7e 100644
 +                vessel->reset_message();
 +            }
 +        }
-+        fish_without_deciding = false;
++        vessel->set_fish_without_deciding(false);
 +
 +        if (stop_fishing) {
 +            // head home now, within this step
@@ -640,7 +646,7 @@ index 9f865034..80653a7e 100644
  static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
                            vector<int> &listVesselIdForVmsLikeToExport,
                            vector<int> &listVesselIdForVmsLikeFPingsOnlyToExport,
-@@ -197,6 +434,11 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+@@ -197,6 +436,11 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
     
  
      if (!is_exited) {
@@ -652,7 +658,7 @@ index 9f865034..80653a7e 100644
          if (roadmap_empty) {
              // check if the vessel is actually active this quarter
              // (when at least one possible metier within this quarter)
-@@ -653,6 +895,7 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
+@@ -653,6 +897,7 @@ static void manage_vessel(std::shared_ptr<SimModel> model, int idx_v,
          //}
  
      }
