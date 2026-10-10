@@ -48,10 +48,10 @@ index d5f26261..81b4a010 100644
  }
  
 diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
-index 0b2b14e4..477a6ecf 100644
+index 0b2b14e4..20560377 100644
 --- a/commons/Vessel.cpp
 +++ b/commons/Vessel.cpp
-@@ -3122,6 +3122,73 @@ void Vessel::find_next_point_on_the_graph_unlocked(vector<Node* >& nodes, int a_
+@@ -3122,6 +3122,76 @@ void Vessel::find_next_point_on_the_graph_unlocked(vector<Node* >& nodes, int a_
  }
  
  
@@ -69,23 +69,26 @@ index 0b2b14e4..477a6ecf 100644
 +
 +    bool returning_to_harbour = nodes[roadmap.back().toIndex()]->get_is_harbour();
 +    double kmh = get_speed() * NAUTIC;
++    if (!(kmh > 0.0)) return 0.0; // no speed: no move (and no 0/0)
 +    double budget = hours * kmh; // km
 +    double covered = 0.0;
++    const double snap_km = 1e-6; // a node this close is reached (float rounding of the budget)
 +
 +    while (!roadmap.empty()) {
 +        Node *nxt = nodes[roadmap.front().toIndex()];
 +        double d = dist(x, y, nxt->get_x(), nxt->get_y());
 +        if (d != d) d = 0.0; // NaN guard on coincident points
 +        if (d > 0.0) course = bearing(x, y, nxt->get_x(), nxt->get_y());
-+        if (d <= budget) {
++        if (d <= budget + snap_km) {
 +            this->move_to(nxt);
 +            next_x = nxt->get_x();
 +            next_y = nxt->get_y();
 +            x = next_x;
 +            y = next_y;
 +            roadmap.pop_front();
-+            budget -= d;
-+            covered += d;
++            double dd = std::min(d, budget); // never charge more than the budget
++            budget -= dd;
++            covered += dd;
 +        } else {
 +            vector<double> xy = destB(x, y, course, budget);
 +            this->set_xy(xy[0], xy[1]);
@@ -125,7 +128,7 @@ index 0b2b14e4..477a6ecf 100644
  //------------------------------------------------------------//
  //------------------------------------------------------------//
  // the catch process...
-@@ -3307,11 +3374,11 @@ Vessel::SweptAreaInfo Vessel::compute_swept_area(const VesselStaticData & v,
+@@ -3307,11 +3377,11 @@ Vessel::SweptAreaInfo Vessel::compute_swept_area(const VesselStaticData & v,
  
      // swept area depends on metier type (trawler vs. static gear)
      if (get_metier()->get_metier_type() == 1) {          // trawlers
@@ -139,7 +142,7 @@ index 0b2b14e4..477a6ecf 100644
          s.subsurf_area = s.swept_area * 0.01;
      }
      return s;
-@@ -3806,7 +3873,8 @@ void Vessel::handle_explicit_population(
+@@ -3806,7 +3876,8 @@ void Vessel::handle_explicit_population(
          v.betas_per_pop[popIdx] +
          m.betas_per_pop[popIdx] +
          h.betas_per_pop[popIdx] +
@@ -149,7 +152,7 @@ index 0b2b14e4..477a6ecf 100644
  
     
      double totCatchWeight = std::min(totAvail, catchPotential);
-@@ -4082,7 +4150,7 @@ void Vessel::handle_implicit_population(
+@@ -4082,7 +4153,7 @@ void Vessel::handle_implicit_population(
         //   discards_pop_at_szgroup[pop][sz]
         //   ping_catch_pop_at_szgroup[pop][sz]
         // For implicit stocks we only use the first size group (index 0).
@@ -158,7 +161,7 @@ index 0b2b14e4..477a6ecf 100644
  
      // cumul
      cr.landings[0] += weight;
-@@ -4311,7 +4379,7 @@ bool Vessel::maybe_close_ground(int groundIdx,
+@@ -4311,7 +4382,7 @@ bool Vessel::maybe_close_ground(int groundIdx,
              get_loc()->add_to_cumdiscards_per_pop(cr.totalDiscards, popIdx);
              int met = this->get_metier()->get_name();
              get_loc()->add_to_cumcatches_per_pop_per_met_this_month(cr.totalLandings, popIdx, met);
@@ -167,7 +170,7 @@ index 0b2b14e4..477a6ecf 100644
              get_loc()->compute_cpue_per_pop_per_met_this_month(popIdx, met); // i.e. cumcatch/cumeffort
  
       
-@@ -4328,12 +4396,12 @@ bool Vessel::maybe_close_ground(int groundIdx,
+@@ -4328,12 +4399,12 @@ bool Vessel::maybe_close_ground(int groundIdx,
                      popIdx) += cr.totalLandings;
              }
              // effort
@@ -183,7 +186,7 @@ index 0b2b14e4..477a6ecf 100644
              }
  
  
-@@ -7535,6 +7603,8 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
+@@ -7535,6 +7606,8 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
          if (dyn_alloc_sce.option(Options::fishing_credits)) is_fishing_credits = true;
  
          // then, call to find.next.pt.on.the.graph()
@@ -192,7 +195,7 @@ index 0b2b14e4..477a6ecf 100644
          this-> find_next_point_on_the_graph_unlocked(nodes, tstep, is_fishing_credits);
  
          // decide on the rest duration for the next time (drawn from a gamma law)
-@@ -8027,6 +8097,8 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
+@@ -8027,6 +8100,8 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
      */
  
      // find.next.pt.on.the.graph()
@@ -201,7 +204,7 @@ index 0b2b14e4..477a6ecf 100644
      this->find_next_point_on_the_graph_unlocked(nodes, tstep, is_fishing_credits);
      unlock();
  return 0;
-@@ -8283,6 +8355,7 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
+@@ -8283,6 +8358,7 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
      this-> set_traveled_dist_this_trip(0);
      this-> set_natio(true);
      this->set_tstep_dep(0);
