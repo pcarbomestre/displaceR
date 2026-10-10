@@ -202,3 +202,62 @@ charges a full hour (or more) on every step that reaches a destination, and
 the same for distance, so upstream steaming time and distance are ~16% higher
 than the movement the vessels actually make. Fuel follows (-9%). With less
 time lost per trip, vessels fish ~3% more hours and catch ~3% more.
+
+**Upstream overcharge, checked from positions.** Straight-line distance between
+consecutive vmslike positions of each trip vs the logged `traveled_dist`
+(`vms_track.R` in the work folder; the straight line understates the path and
+misses the first hour, so only the ratio between runs means something):
+8-patch 3.13 Mkm of track for 4.11 Mkm logged (0.763); timestep_accounting
+3.06 Mkm for 3.45 Mkm (0.885); partial_fishing 3.03 / 3.42 (0.887). The
+vessels move about as much in all runs; upstream logs ~16% more distance (and
+steaming time) than it moves.
+
+**(d) `timestep_accounting` + `partial_fishing`** (step 3), two seeds:
+
+| years 1-3 | 8-patch simu1 | partial simu1 | 8-patch simu2 | partial simu2 |
+|---|---|---|---|---|
+| trips | 20,402 | 20,433 | 20,608 | 20,581 |
+| vmslike rows at sea | 730,593 | 661,238 | 733,575 | 676,097 |
+| vmslike fishing / steaming rows | 413,531 / 317,062 | 408,694 / 252,544 | 415,324 / 318,251 | 421,344 / 254,753 |
+| segment hours fishing / steaming | - | 398,801 / 252,338 | - | 411,402 / 254,516 |
+| logbook timeatsea | 696,343 | 649,785 | 698,104 | 664,973 |
+| logbook fishing / cumsteaming | 393,608 / 302,735 | 397,808 / 251,977 | 394,503 / 303,600 | 410,669 / 254,304 |
+| distance (km) | 4,105,568 | 3,418,696 | 4,118,690 | 3,437,522 |
+| fuel | 23,247,705 | 20,668,001 | 23,216,649 | 20,883,830 |
+| catch (t) | 91,192 | 92,156 | 92,877 | 93,556 |
+| catch per fishing hour (kg) | 231.7 | 231.7 | 235.4 | 227.8 |
+| mean trip (steps) | 34.8 | 31.3 | 34.5 | 31.8 |
+| run time | 5:03 | 5:11 | 4:51 | 5:07 |
+
+Per trip (simu1; simu2 the same to 0.01): rows - (arr - dep) 1.00; segment
+steaming hours - cumsteaming 0.00 [-0.05, 0.04]; segment fishing hours -
+fishing 0.00 [-0.07, 0.07]; segment km - traveled_dist 0.01 [-0.44, 0.45];
+rows at sea - timeatsea 0.50 [0.1, 0.9]. No step holds more than 1 h; 20,430
+steps hold less (one per trip: the arrival in port, the rest of that hour is
+spent in port). 20,642 steps have 2 segments and 158 have 3 (arrive and fish,
+fish and head home).
+
+Reading: with partial fishing the carry is gone and the only difference
+between counting rows and the logbook is the arrival hour (0.5 h per trip on
+average), which is real port time and could be dropped by counting segment
+hours instead of rows. Trips per year are unchanged (within seed noise:
+-0.1% and +0.2% vs 8-patch, the seeds differ by 1%), fishing hours +1.1% and
++4.1%, catch +1.1% and +0.7%, catch per fishing hour unchanged within noise,
+steaming time and distance -17%, fuel -10%, time at sea -5 to -7%, trips 3 h
+(9%) shorter in calendar time. Run time +2-5%.
+
+## What is not done / caveats
+
+- Decisions (`should_i_stop_fishing`, `should_i_change_ground`) are evaluated
+  before every fishing action; with partial fishing a step can hold two
+  fishing actions on different grounds (rare) and the last fraction of a step
+  is one more decision than upstream would take.
+- The upstream one-node move branch applies the metier fuel multiplier twice;
+  `move_within()` applies it once (no effect when it is 1).
+- `vmslikefpingsonly` and the SQLite vmslike are not segmented; the GUI
+  movement messages are unchanged.
+- `fishing_credits` tariffs are paid per move action rather than per step
+  (not used by the westcoast scenarios).
+- The patch is not independent of the other eight (shared context lines); it
+  must be applied last.
+- Only checked on westcoast 7.47, 3 years, seeds 1-2.
