@@ -267,12 +267,97 @@ hours instead of rows. Trips per year are unchanged (within seed noise:
 steaming time and distance -17%, fuel -10%, time at sea -5 to -7%, trips 3 h
 (9%) shorter in calendar time. Run time +2-5%.
 
+## Fix round (review findings) and 13-year acceptance tests
+
+Fixes (each a minimal change in the patch; see the commit log of the branch):
+
+1. `Node::cumftime` is a double (was `int`: every partial-fishing fraction was
+   truncated; the first version's `popnodes_cumftime` was 2.19% below the
+   vmslike fishing hours over 13 years). Whole hours print as before.
+2. The carry is set only by the "less than a full fishing hour left on a
+   ground" break and capped below 1 h; any other leftover is dropped (it grew
+   without bound for a vessel stuck at sea).
+3. `partial_fishing`: shortest fishing action 0.05 h; a shorter rest on a
+   ground is dropped (the first version had 4,191 fishing segments < 0.05 h in
+   13 years of seed 1, down to 0.0001 h, each a full `do_catch()`). Static-gear
+   swept area scaled by the fraction.
+4. `move_within()` reaches a node within 1e-6 km of the budget.
+5. `fish_without_deciding` is a vessel member (kept across steps, cleared in
+   `reinit_after_a_trip`).
+6. `move_within()` returns 0 h at speed <= 0.
+
+Binary `dist-fix` (the 8 patches + this one), westcoast 7.47 inputs copy,
+`baseline` scenario, 13 years = 113,952 steps (3 years = 26,305), seeds 1-3,
+`-e13 --huge=1 --disable-sqlite`, 1 thread, sequoia. Scripts in the work
+folder (`cmp_fix.sh`, `accounting_check.R`, `edge_cases.R`,
+`closure_check.R`, `long_compare.R`, `catch_explain.R`, `stop_rows.R`).
+
+| Test | Result | Numbers |
+|---|---|---|
+| A options off vs calibration binary (7.47L 13 y, 7.47 3 y; seeds 1-3) | PASS | each of the 6 runs: 37 of 39 files byte-identical; `memstats` differs; `popdyn_annual_indic` identical once its Fbar columns (5-6) are dropped. The Fbar columns differ in 33-48 rows (13 y) and 2-6 rows (3 y) and also differ between two runs of the same options-off binary (33/45/31 rows in the earlier run), i.e. Fbar is not reproducible run to run, unrelated to the patch |
+| B accounting, both options, 13 y, seeds 1-3 | PASS | 88,990 / 88,790 / 89,490 trips, all matched, 0 trips beyond the logbook rounding; max per-trip difference steaming 0.050 h, fishing 0.099 h, timeatsea 0.050 h, distance 0.551 km; totals within 0.007% (h) and 0.002% (km); `popnodes_cumftime` summed over nodes = vmslike fishing hours to 0.0000% (8,723-8,744 of ~8,850 nodes hold fractional hours) |
+| C sanity | PASS | 0 NaN / negative hours or km; max step 1.0001 h (4-decimal printing), 0 steps above 1 h + 5e-4; minimum fishing segment 0.0500 h, 0 below 0.05 h (4.1% of fishing segments are partial); 19-22 at-sea steps with 0 h per 13-year run, never two in a row (no stuck vessel); trips longer than 720 steps 27-34 (options off: 33). `timestep_accounting` alone (13 y, seed 1): carry < 1 h (max step prints 2.0000 in 2 of 3.1 M steps: 1 h + a carry just below the 1 h cap) |
+| D edge cases and closure | PASS | per trip end reason (seed 1, both options): day trips 37,153, fuel-limited 1,782, hold-full 50,055, trips fishing a code_area 10 node 5,849: all within rounding (max 0.05 h steaming, 0.10 h fishing, 0.54 km). Same for `timestep_accounting` alone (3 y; identical to the run before the fixes) and the closure run. Closure (`area_monthly_closure`, 117 closed nodes, 3 y): 0 fishing hours and 0 steaming rows on closed nodes, options off and on |
+| E on vs off, 13 y x 3 seeds | differences listed below | |
+
+**E. Differences beyond seed noise** (per-year means, both options vs off,
+z = difference / pooled seed s.e.):
+
+| | off | on | change | z | explanation |
+|---|---|---|---|---|---|
+| logbook steaming h | 101,140 | 84,531 | -16.4% | -41 | upstream charges a full hour (or more) on every step that reaches a destination |
+| distance km | 1,373,300 | 1,146,100 | -16.5% | -43 | same, for distance |
+| fuel | 8.227 M | 7.487 M | -9.0% | -15 | follows steaming |
+| timeatsea | 244,180 | 233,860 | -4.2% | -3.4 | less steaming, more fishing |
+| fishing h (logbook, hours that ran `do_catch`) | 143,030 | 149,330 | +4.4% | 2.2 | see catch below |
+| vmslike fishing rows/h | 149,610 | 149,450 | -0.1% | -0.1 | upstream vmslike counts the stop-decision step as a fishing row: exactly 1.000 extra row per trip in all 3 seeds (`stop_rows.R`); the "unchanged" vmslike fishing time hides +4.4% real fishing |
+| vmslike steaming rows/h | 105,830 | 84,555 | -20.1% | -51 | overcharge + the declaring step |
+| trips | 6,812 | 6,853 | +0.6% | 2.4 | trips 3 h shorter in calendar time |
+| fuel-limited trips (share) | 2.25% | 2.01% | -10.6% | -2.9 | with the fuel overcharge gone fewer trips hit the half-tank rule |
+| SJU catch | 558.8 t | 595.7 t | +6.6% | 4.4 | more fishing hours (+4.4%) and +2.1% catch/h; 55% from metier 14 |
+| OTH catch | 21,283 t | 21,955 t | +3.2% | 4.5 | more fishing hours, catch/h -1.2% |
+| SJZ catch | 417.5 t | 436.3 t | +4.5% | 1.3 | (was z 2.3 with the first version; now within noise) |
+| total catch | 30,128 t | 30,600 t | +1.6% | 1.9 | borderline |
+
+Not beyond noise: SAB (-11%, z -0.8; one options-off seed has an SAB boom
+after year 9, off s.d. of year-13 SSB 104 kt), MIP (+1.9%, z 0.6), SSB of all
+stocks (|z| <= 1.8 after year 3; SAB z -2.7 and -3.3 in years 2-3 for differences below 0.5%),
+end-reason shares of day trips and hold-full trips, and the spatial effort
+pattern (total-variation distance of effort shares per 0.1 deg cell off vs on
+0.073, between two off seeds 0.116; correlation of 3-seed means 0.985).
+
+**Where the extra catch comes from** (`catch_explain.R`, decomposition
+catch = fishing hours x catch per hour, per trip end reason and metier):
+
+- Not partial fishing. `timestep_accounting` alone (13 y, 3 seeds) gives the
+  same catch: +1.58% vs off (both options +1.57%); adding `partial_fishing`
+  changes catch by -0.01% (z 0.0) and fishing hours by -1.2% (z -1.7).
+- Not depletion: no SSB differs beyond noise; SJU SSB -0.5% (z -1).
+- It is the time accounting, through the trip-ending rules, which read
+  `timeatsea` and fuel that upstream overcharges:
+  - **Day trips** (stop when timeatsea >= 12 h within 3 h of port; 42% of
+    trips): steaming per trip 10.14 -> 8.30 h, fishing 6.80 -> 7.55 h (+11%),
+    catch per trip +8.6%: +79 t/yr (z 7.1), +2,085 fishing h/yr.
+  - **Fuel-limited trips** (stop at half the tank): 10% fewer (z -2.7), each
+    fishes 28.9 -> 36.5 h and lands 1.56 -> 1.98 t: +34 t/yr (z 4.3).
+  - **Hold-full trips** (56%): catch per trip fixed by the hold (-0.5%), but
+    1.7% more of them (calendar time per trip -3 h: no stop-decision step, no
+    declaring step, no steaming overcharge): +359 t/yr (z 1.4), +3,600 h/yr.
+  - Stock mix: the extra hours fall on metiers 14, 19, 24, 23 (14 and 19
+    alone +670 t/yr of hours effect); metier 14 carries most SJU and SJZ, so
+    those stocks rise more than the total. Catch per fishing hour falls 2.7%
+    overall because the extra hold-full hours cannot raise the capped catch
+    per trip.
+  - Decision timing (decisions before each fishing action, stop decision no
+    longer costing a step) is part of the trip-length effect above; the
+    partial-fishing comparison bounds its catch effect at ~0.
+
 ## What is not done / caveats
 
 - Decisions (`should_i_stop_fishing`, `should_i_change_ground`) are evaluated
   before every fishing action; with partial fishing a step can hold two
-  fishing actions on different grounds (rare) and the last fraction of a step
-  is one more decision than upstream would take.
+  fishing actions on different grounds (rare); a rest of a step shorter than
+  0.05 h on a ground is dropped (neither fished nor charged).
 - The upstream one-node move branch applies the metier fuel multiplier twice;
   `move_within()` applies it once (no effect when it is 1).
 - `vmslikefpingsonly` and the SQLite vmslike are not segmented; the GUI
@@ -281,4 +366,4 @@ steaming time and distance -17%, fuel -10%, time at sea -5 to -7%, trips 3 h
   (not used by the westcoast scenarios).
 - The patch is not independent of the other eight (shared context lines); it
   must be applied last.
-- Only checked on westcoast 7.47, 3 years, seeds 1-2.
+- Only checked on westcoast 7.47 (13 years, seeds 1-3; closure scenario 3 years, seed 1).
