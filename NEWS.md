@@ -1,3 +1,15 @@
+# displaceR 0.1.0.9003
+
+* `read_displace_output(x, "vmslike")` reads the segmented vmslike of a
+  `timestep-accounting` build (option `timestep_accounting` on): 11 columns,
+  `seg`, `hours` and `km` after `state`, one row per segment of a step, so rows
+  are no longer hours (sum `hours` instead). Recognised by the width; 8-column
+  files read as before. `displace_output_spec("vmslike", timestep_accounting = TRUE)`
+  gives the layout.
+* `run_displace()` refuses a scenario with `timestep_accounting` or
+  `partial_fishing` on a binary built without the `timestep-accounting` patch
+  (`check_features = FALSE` overrides).
+
 # displaceR 0.1.0.9002
 
 * The manifest default is now `1.8.0-96eadecb-westcoast-repro`, so a bare

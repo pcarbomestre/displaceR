@@ -113,6 +113,32 @@ test_that("run_displace refuses grounds_by_port on a binary without the patch", 
                              output_dir = tempfile()))
 })
 
+test_that("run_displace refuses timestep_accounting on a binary without the patch", {
+  inp <- make_fake_input()
+  sc <- inp$scenario_obj
+  sc$dyn_alloc_sce <- c("baseline", "timestep_accounting", "partial_fishing")
+  write_displace_scenario(sc, inp$dir, inp$input_name, scenario = "ta")
+
+  bindir <- tempfile(); dir.create(bindir)
+  bin <- file.path(bindir, "displace")
+  file.copy(exit_binary("true"), bin)
+  Sys.chmod(bin, "0755")
+  skip_if_not_installed("jsonlite")
+  jsonlite::write_json(list(upstream_sha = "96eadecb", feature_patches = "grounds-by-port"),
+                       file.path(bindir, "build-info.json"), auto_unbox = TRUE)
+  expect_error(
+    run_displace(inp$dir, inp$input_name, scenario = "ta", steps = 10,
+                 binary = bin, echo = FALSE, sqlite = FALSE, output_dir = tempfile()),
+    "timestep_accounting, partial_fishing, which need a DISPLACE build with the feature patch\\(es\\) timestep-accounting,"
+  )
+  jsonlite::write_json(list(upstream_sha = "96eadecb",
+                            feature_patches = "grounds-by-port timestep-accounting"),
+                       file.path(bindir, "build-info.json"), auto_unbox = TRUE)
+  expect_silent(run_displace(inp$dir, inp$input_name, scenario = "ta", steps = 10,
+                             binary = bin, echo = FALSE, sqlite = FALSE,
+                             output_dir = tempfile()))
+})
+
 test_that("a feature-patched local build gets its own install label", {
   info <- list(upstream_sha = "96eadecb1980d6f9ad22571cd6f963cc05379815",
                displace_version = "1.8.0")

@@ -1,7 +1,7 @@
 # timestep-accounting: the hourly step as a time budget
 
-Feature patch `tools/patches/timestep-accounting.patch` (exploration branch
-`timestep-accounting`, local only). Written against v1.8.0 **after** the eight
+Feature patch `tools/patches/timestep-accounting.patch`: reviewed, review
+fixes in, acceptance tests A-E passed (see Verification). Written against v1.8.0 **after** the eight
 westcoast patches (it shares context lines in `include/options.h`,
 `commons/options.cpp`, `commons/Vessel.cpp` and `simulator/outputexporter.*`
 with `grounds-by-port`, `out-of-range-implicit` and `shortest-paths`), so it is
@@ -118,7 +118,8 @@ row per segment, keeping the integer tstep, with 3 more columns:
 `tstep vid tstep_dep x y course cumfuel state seg hours km`
 
 A step at sea with no segment (vessel stuck without a path, or tstep 0) is one
-row with `seg 1, hours 0, km 0`. With the option off the 8-column format is
+row with `seg 1, hours 0, km 0`. `read_displace_output(x, "vmslike")` recognises
+the 11-column layout by its width and names the extra columns. With the option off the 8-column format is
 unchanged. The SQLite vmslike and `vmslike_fpings_only` are not segmented
 (off in the westcoast runs). Per-trip sums of `hours` by state equal the
 logbook's `cumsteaming` (state 2) and `timeatsea - cumsteaming` (state 1), and
@@ -269,7 +270,7 @@ steaming time and distance -17%, fuel -10%, time at sea -5 to -7%, trips 3 h
 
 ## Fix round (review findings) and 13-year acceptance tests
 
-Fixes (each a minimal change in the patch; see the commit log of the branch):
+Fixes (each a minimal change in the patch; see `git log -- tools/patches/timestep-accounting.patch`):
 
 1. `Node::cumftime` is a double (was `int`: every partial-fishing fraction was
    truncated; the first version's `popnodes_cumftime` was 2.19% below the

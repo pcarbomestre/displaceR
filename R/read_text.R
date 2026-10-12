@@ -70,6 +70,11 @@ resolve_output_dir <- function(x) {
 #' [read_displace_config()]) and both `nbpops` and the explicit-population list
 #' are derived from it.
 #'
+#' `vmslike` from a `timestep-accounting` build run with the
+#' `timestep_accounting` option has one row per segment of a step and three
+#' more columns, `seg`, `hours` and `km`; it is recognised by the width. Rows
+#' are then not hours: sum `hours` by `state` for time fishing or steaming.
+#'
 #' Prefer [read_displace_db()] where you can. These layouts are transcribed from
 #' upstream documentation rather than from the writing code, and the files carry
 #' nothing that would let a reader detect a layout change.
@@ -178,6 +183,14 @@ read_displace_output <- function(x,
       observed == length(cols) + length(LOGLIKE_GROUNDS_BY_PORT_COLS)) {
     cols <- c(cols, LOGLIKE_GROUNDS_BY_PORT_COLS)
   }
+  ## A timestep-accounting build with the timestep_accounting option writes one
+  ## vmslike row per segment, with seg, hours and km appended.
+  types <- spec$types
+  if (identical(type, "vmslike") &&
+      observed == length(cols) + length(VMSLIKE_TIMESTEP_COLS)) {
+    cols <- c(cols, VMSLIKE_TIMESTEP_COLS)
+    types <- c(types, VMSLIKE_TIMESTEP_TYPES)
+  }
 
   if (observed != length(cols)) {
     hint <- if (is.null(spec$cols)) {
@@ -192,8 +205,8 @@ read_displace_output <- function(x,
           basename(path), observed, type, length(cols), hint)
   }
 
-  colClasses <- if (!is.null(spec$types)) {
-    unname(c(i = "integer", d = "numeric", c = "character")[spec$types])
+  colClasses <- if (!is.null(types)) {
+    unname(c(i = "integer", d = "numeric", c = "character")[types])
   } else {
     NA
   }

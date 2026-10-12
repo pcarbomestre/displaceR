@@ -172,3 +172,37 @@ test_that("shipslogs treats the fields upstream writes as decimals as numeric", 
   expect_equal(ncol(df), 17L)
   expect_equal(df$shiptype, 1)
 })
+
+test_that("vmslike reads both the 8-column and the segmented 11-column layout", {
+  expect_length(displace_output_spec("vmslike", timestep_accounting = TRUE), 11L)
+  expect_equal(displace_output_spec("vmslike", timestep_accounting = TRUE)[9:11],
+               c("seg", "hours", "km"))
+
+  d <- tempfile()
+  dir.create(d)
+  ## Rows as the writers print them (trailing space included).
+  writeLines(c("1 V1 0 -124.123 44.456 90 12 2 ",
+               "2 V1 0 -124.200 44.500 180 25 1 "),
+             file.path(d, "vmslike_sim1.dat"))
+  plain <- read_displace_output(d, "vmslike", sim_name = "sim1")
+  expect_equal(names(plain), displace_output_spec("vmslike"))
+  expect_type(plain$state, "integer")
+
+  ## timestep-accounting: one row per segment, same integer tstep.
+  writeLines(c("1 V1 0 -124.123 44.456 90 12 2 1 0.4000 9.120 ",
+               "1 V1 0 -124.130 44.460 0 14 1 2 0.6000 0.000 ",
+               "2 V1 0 -124.130 44.460 0 0 1 1 0.0000 0.000 "),
+             file.path(d, "vmslike_sim2.dat"))
+  seg <- read_displace_output(d, "vmslike", sim_name = "sim2")
+  expect_equal(names(seg), displace_output_spec("vmslike", timestep_accounting = TRUE))
+  expect_type(seg$seg, "integer")
+  expect_type(seg$hours, "double")
+  expect_equal(seg$seg, c(1L, 2L, 1L))
+  expect_equal(sum(seg$hours[seg$state == 1L]), 0.6)
+  expect_equal(seg$km[1], 9.12)
+
+  ## any other width is still an error
+  writeLines("1 V1 0 -124.1 44.4 90 12 2 1 ", file.path(d, "vmslike_sim3.dat"))
+  expect_error(read_displace_output(d, "vmslike", sim_name = "sim3"),
+               "has 9 columns")
+})
