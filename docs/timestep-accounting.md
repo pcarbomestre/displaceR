@@ -207,7 +207,7 @@ Per trip (mean [p5, p95]):
 | rows at sea - timeatsea | 1.63 [1.2, 2.0] | 0.51 [0.1, 1.0] |
 | segment steaming hours - cumsteaming | - | 0.00 [-0.04, 0.04] (loglike rounds to 0.1 h) |
 | segment fishing hours - fishing | - | 0.00 |
-| segment km - traveled_dist | - | 0.01 [-0.45, 0.45] (loglike rounds to 0.1 km) |
+| segment km - traveled_dist | - | 0.01 [-0.45, 0.45] (loglike prints `traveled_dist` in whole km) |
 
 Reading: the stop step and the declaring step are gone (fishing rows = fishing
 hours exactly; a trip has arr - dep + 1 rows where the last is the arrival
@@ -352,6 +352,14 @@ catch = fishing hours x catch per hour, per trip end reason and metier):
   - Decision timing (decisions before each fishing action, stop decision no
     longer costing a step) is part of the trip-length effect above; the
     partial-fishing comparison bounds its catch effect at ~0.
+
+**CI release** `displace-96eadecb-westcoast-timestep` (manifest
+`1.8.0-96eadecb-westcoast-timestep`), smoke test on sequoia (2026-10-12), 3 years,
+simu1, same inputs and flags as above: options off vs the
+`1.8.0-96eadecb-westcoast-repro` binary 38/39 files byte-identical (only
+`memstats`); both options on vs `dist-fix` 37/39 (`memstats`, and
+`popdyn_annual_indic` only in its run-to-run Fbar columns 5-6); vmslike reads
+in R with 11 columns (on) and 8 (off).
 
 ## What is not done / caveats
 

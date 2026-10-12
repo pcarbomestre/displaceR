@@ -106,6 +106,37 @@
         }
       }
     },
+    "1.8.0-96eadecb-westcoast-timestep": {
+      "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
+      "upstream_ref": "v1.8.0",
+      "displace_version": "1.8.0",
+      "displace_build": "0",
+      "released": "2026-10-12",
+      "feature_patches": "grounds-by-port headless-ipc-lazy keep-unselected-othland out-of-range-implicit astar-speedup sample-table-cache shortest-paths reproducible-diffusion timestep-accounting",
+      "note": [
+        "1.8.0-96eadecb-westcoast-repro plus the timestep-accounting patch",
+        "(docs/timestep-accounting.md). Its dyn_alloc options timestep_accounting and",
+        "partial_fishing are off unless the scenario sets them; with them off the outputs",
+        "are byte-identical to westcoast-repro (smoke test on sequoia, 2026-10-12; only",
+        "memstats differs). With timestep_accounting on, each 1 h step is a time budget",
+        "spent on several actions, moves charge exactly the time and distance covered,",
+        "and vmslike has one row per segment with 3 more columns (seg hours km)."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast-timestep/displace-96eadecb1980-linux-x86_64-glibc2.39-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths+reproducible-diffusion+timestep-accounting.tar.gz",
+          "sha256": "b11c2d0855a374744d6b4662568b35a77f3b9f9aa5a7ad1c3b8c531c763690cc",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-96eadecb-westcoast-timestep/displace-96eadecb1980-macos-arm64-grounds-by-port+headless-ipc-lazy+keep-unselected-othland+out-of-range-implicit+astar-speedup+sample-table-cache+shortest-paths+reproducible-diffusion+timestep-accounting.tar.gz",
+          "sha256": "ae342001106fdbaac164a24a142c142502a6bafe038af5ec713cbd9b60a33741",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
     "1.8.0-96eadecb": {
       "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
       "upstream_ref": "v1.8.0",

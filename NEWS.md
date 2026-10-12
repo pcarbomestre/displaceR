@@ -1,5 +1,10 @@
 # displaceR 0.1.0.9003
 
+* New DISPLACE build in the manifest, a pre-release (Linux glibc 2.39 and macOS
+  arm64): `install_displace("1.8.0-96eadecb-westcoast-timestep")` is
+  `1.8.0-96eadecb-westcoast-repro` plus the `timestep-accounting` patch
+  (options `timestep_accounting` and `partial_fishing`, off unless the scenario
+  sets them; docs/timestep-accounting.md). The default is unchanged.
 * `read_displace_output(x, "vmslike")` reads the segmented vmslike of a
   `timestep-accounting` build (option `timestep_accounting` on): 11 columns,
   `seg`, `hours` and `km` after `state`, one row per segment of a step, so rows
