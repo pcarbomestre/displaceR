@@ -46,6 +46,11 @@ has. Rather than make you look that up, pass `config` (from
 [read_displace_config()]) and both `nbpops` and the explicit-population list
 are derived from it.
 
+`vmslike` from a `timestep-accounting` build run with the
+`timestep_accounting` option has one row per segment of a step and three
+more columns, `seg`, `hours` and `km`; it is recognised by the width. Rows
+are then not hours: sum `hours` by `state` for time fishing or steaming.
+
 Prefer [read_displace_db()] where you can. These layouts are transcribed from
 upstream documentation rather than from the writing code, and the files carry
 nothing that would let a reader detect a layout change.

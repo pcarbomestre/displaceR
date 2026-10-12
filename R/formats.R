@@ -240,6 +240,9 @@ OUTPUT_SPECS <- list(
 #' @param grounds_by_port For `loglike`: append the `trip_port` and `dep_port`
 #'   columns that a `grounds-by-port` build writes when the scenario enables
 #'   the `grounds_by_port` option (see [check_grounds_by_port()]).
+#' @param timestep_accounting For `vmslike`: append the `seg`, `hours` and
+#'   `km` columns that a `timestep-accounting` build writes (one row per segment
+#'   of a step) when the scenario enables the `timestep_accounting` option.
 #' @param db_version Output schema version, for future dispatch. Currently
 #'   unused: there is one layout in the wild.
 #'
@@ -249,13 +252,17 @@ OUTPUT_SPECS <- list(
 #' displace_output_spec("popstats")
 #' displace_output_spec("loglike", nbpops = 3, explicit_pops = c(0, 2))
 displace_output_spec <- function(type, nbpops = NULL, explicit_pops = NULL,
-                                 grounds_by_port = FALSE, db_version = NULL) {
+                                 grounds_by_port = FALSE, timestep_accounting = FALSE,
+                                 db_version = NULL) {
   spec <- OUTPUT_SPECS[[type]]
   if (is.null(spec)) {
     stopf("unknown output type '%s'. Known: %s",
           type, paste(names(OUTPUT_SPECS), collapse = ", "))
   }
   if (!is.null(spec$cols)) {
+    if (identical(type, "vmslike") && isTRUE(timestep_accounting)) {
+      return(c(spec$cols, VMSLIKE_TIMESTEP_COLS))
+    }
     return(spec$cols)
   }
   switch(
@@ -290,6 +297,13 @@ popnodes_totals_cols <- function(nbpops) {
                              sprintf("tot_W_sp%d", 0:(nbpops - 1L))))
   c("tstep", "node", "long", "lat", per_pop)
 }
+
+## Appended to vmslike by the timestep-accounting feature patch, only when the
+## scenario enables timestep_accounting: each step is split into segments (one
+## row each, same integer tstep), numbered from 1, with the hours and km the
+## segment took. Row counts are then no longer hours: sum `hours` instead.
+VMSLIKE_TIMESTEP_COLS <- c("seg", "hours", "km")
+VMSLIKE_TIMESTEP_TYPES <- c("i", "d", "d")
 
 ## loglike_*.dat -- the economics file.
 ##

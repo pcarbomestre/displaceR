@@ -412,7 +412,9 @@ displace_features <- function(binary = NULL) {
 ## a scenario runs as plain baseline on an unpatched binary, silently.
 FEATURE_OPTIONS <- c(grounds_by_port = "grounds-by-port",
                      out_of_range_implicit = "out-of-range-implicit",
-                     shortest_paths = "shortest-paths")
+                     shortest_paths = "shortest-paths",
+                     timestep_accounting = "timestep-accounting",
+                     partial_fishing = "timestep-accounting")
 
 check_binary_features <- function(binary, input_dir, input_name, scenario) {
   path <- simusspe_file(input_dir, input_name, paste0(scenario, ".dat"))
@@ -436,7 +438,7 @@ check_binary_features <- function(binary, input_dir, input_name, scenario) {
                  "tools/build-displace.sh --ref v1.8.0 --patch %s --patch headless-ipc-lazy, or pass ",
                  "check_features = FALSE to run anyway."),
           scenario, paste(names(missing), collapse = ", "),
-          paste(unname(missing), collapse = ", "), binary,
+          paste(unique(unname(missing)), collapse = ", "), binary,
           if (identical(have, NA_character_)) "has no build record (build-info.json)"
           else sprintf("was built with: %s", if (length(have)) paste(have, collapse = ", ") else "none"),
           unname(missing[1]))

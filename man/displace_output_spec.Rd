@@ -9,6 +9,7 @@ displace_output_spec(
   nbpops = NULL,
   explicit_pops = NULL,
   grounds_by_port = FALSE,
+  timestep_accounting = FALSE,
   db_version = NULL
 )
 }
@@ -24,6 +25,10 @@ i.e. `setdiff(0:(nbpops-1), implicit_pops)`. Required for `loglike`.}
 \item{grounds_by_port}{For `loglike`: append the `trip_port` and `dep_port`
 columns that a `grounds-by-port` build writes when the scenario enables
 the `grounds_by_port` option (see [check_grounds_by_port()]).}
+
+\item{timestep_accounting}{For `vmslike`: append the `seg`, `hours` and
+`km` columns that a `timestep-accounting` build writes (one row per segment
+of a step) when the scenario enables the `timestep_accounting` option.}
 
 \item{db_version}{Output schema version, for future dispatch. Currently
 unused: there is one layout in the wild.}
