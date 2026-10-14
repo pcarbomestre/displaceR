@@ -1,5 +1,5 @@
 diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
-index 187a5db8..8682a107 100644
+index 187a5db8..3c7d8cf2 100644
 --- a/commons/Vessel.cpp
 +++ b/commons/Vessel.cpp
 @@ -3798,12 +3798,7 @@ void Vessel::handle_explicit_population(
@@ -31,3 +31,20 @@ index 187a5db8..8682a107 100644
  
      // -------------------------------------------------------------
      //   1 Locate the node index (relative to the vessel’s ground list)
+@@ -7632,10 +7633,12 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
+                vector<int>    a_met = do_sample(1, metiers_on_grd.size(), metiers_on_grd, freq_metiers_on_grd);
+                this->set_metier(metiers[a_met.at(0)]);
+             }
+-        }
+-        else
+-        {
+-            this->set_metier(  metiers[ 0 ]  ); // dangerous fix
++            // grounds_by_port: this else belongs to the metier check, inside
++            // !by_port; with by_port the metier was drawn with the ground above
++            else
++            {
++                this->set_metier(  metiers[ 0 ]  ); // dangerous fix
++            }
+         }
+         //random_shuffle(metiers_on_grd.begin(),metiers_on_grd.end()); // random permutation i.e. equal frequency of occurence
+         //this->set_metier(  metiers[ metiers_on_grd[0] ]  );
