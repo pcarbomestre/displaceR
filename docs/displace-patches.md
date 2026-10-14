@@ -26,6 +26,15 @@ not change model behaviour and are not listed here. See `docs/upstream-issues.md
 | `out-of-range-implicit` | `commons/Vessel.cpp`, `commons/options.cpp`, `include/options.h`, +19/-5 | Only when the scenario sets `out_of_range_implicit` | On nodes with `code_area` 10 every stock is caught as an implicit stock (gamma draw from the vessel's `gshape/gscale_cpue_per_stk_on_nodes` x cpue and metier multipliers; no presence check, no biomass removed, landings in size group 0), and the random change of ground is no longer blocked there. DISPLACE 1.5.0 did this (`do_catch_v150`, "implicit (or outside the range)"); the 1.8.0 rewrite of `do_catch` dropped it. Used by the westcoast analysis for grounds outside the species distribution domain. | below |
 | `timestep-accounting` | `simulator/thread_vessels.cpp`, `simulator/outputexporter.{cpp,h}`, `simulator/main.cpp`, `commons/{Vessel,Node}.cpp`, `include/{Vessel,Node}.h`, options, +416/-18 | Only when the scenario sets `timestep_accounting` (and `partial_fishing`) | The 1 h step becomes a time budget spent on several actions (reach the ground and fish, decide to stop and head home, arrive and declare, in the same step), moves charge exactly the time and distance covered, vmslike gets one row per segment with `seg hours km`; `partial_fishing` fishes fractions of an hour with catch/effort scaled. Applied after the eight westcoast patches. Reviewed; passed acceptance tests A-E. | `docs/timestep-accounting.md` |
 
+### Patches for upstream v1.9.2
+
+Upstream v1.9.2 (`c7fe66fb`) includes its own versions of the patches above.
+The patches below apply to `--ref c7fe66fb` only, not to v1.8.0.
+
+| Patch | Files | Changes model behaviour? | Why |
+|---|---|---|---|
+| `out-of-range-implicit-v192` | `commons/Vessel.cpp`, +8/-7 | Only when the scenario sets `out_of_range_implicit` | In v1.9.2, `maybe_close_ground()` sends every stock on `code_area` 10 nodes to `handle_implicit_population()`, but the exception to the "stock listed on this node" check was put in `handle_explicit_population()`, which is never called there. Explicit stocks were therefore never caught outside their range. The patch moves the exception to `handle_implicit_population()`, as in `out-of-range-implicit` for v1.8.0; both functions then match the `1.8.0-96eadecb-westcoast-timestep` build. |
+
 The patches apply in any combination and order (`out-of-range-implicit` and
 `grounds-by-port` both edit `Vessel.cpp` and the options files, in different
 places; checked 2026-10-09).

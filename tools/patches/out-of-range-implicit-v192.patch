@@ -1,0 +1,33 @@
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 187a5db8..8682a107 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -3798,12 +3798,7 @@ void Vessel::handle_explicit_population(
+     // 0️  Quick‑reject if the pop is not present on this node
+     // ------------------------------------------------------------------
+     int popName = populations.at(popIdx)->get_name();
+-    // out-of-range-implicit: on an out-of-range node (code_area 10)
+-    // the stock is caught from the vessel's cpue whether or not it is listed
+-    // on the node (as DISPLACE 1.5.0 did, do_catch_v150)
+-    bool out_of_range = dyn_alloc_sce.option(Options::out_of_range_implicit) &&
+-    this->get_loc()->get_code_area() == 10;
+-    if (!out_of_range && !node_contains_pop(popName)) return;   // helper
++    if (!node_contains_pop(popName)) return;   // helper 
+ 
+     // ------------------------------------------------------------------
+     // 1️  Pull node‑specific biological state
+@@ -4090,7 +4085,13 @@ void Vessel::handle_implicit_population(
+     // 0 Quick‑reject if the pop is not present on this node
+     // ------------------------------------------------------------------
+     int popName = populations.at(popIdx)->get_name();
+-    if (!node_contains_pop(popName)) return;   // helper 
++    // out-of-range-implicit: on an out-of-range node (code_area 10)
++    // the stock is caught from the vessel's cpue whether or not it is listed
++    // on the node (as DISPLACE 1.5.0 did, do_catch_v150). maybe_close_ground()
++    // sends every stock on such nodes here, never to handle_explicit_population()
++    bool out_of_range = dyn_alloc_sce.option(Options::out_of_range_implicit) &&
++        this->get_loc()->get_code_area() == 10;
++    if (!out_of_range && !node_contains_pop(popName)) return;   // helper
+ 
+     // -------------------------------------------------------------
+     //   1 Locate the node index (relative to the vessel’s ground list)
