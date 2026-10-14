@@ -1,0 +1,23 @@
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 187a5db8..41c585f4 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -4387,13 +4387,14 @@ bool Vessel::maybe_close_ground(int groundIdx,
+                 this->cumcatch_fgrounds_per_yearquarter_per_pop.at(idx_node_r).at(q).at(
+                     popIdx) += cr.totalLandings;
+             }
+-            // effort
+-            this->cumeffort_per_trip_per_fgrounds.at(idx_node_r) += PING_RATE;
++            // effort: the hours actually fished (timestep-accounting partial_fishing; 1 otherwise),
++            // as the catch above, so that the experienced cpue per ground is catch per hour fished
++            this->cumeffort_per_trip_per_fgrounds.at(idx_node_r) += (PING_RATE * m_fishing_fraction);
+             if (dyn_alloc_sce.option(Options::experiencedCPUEsPerYearQuarter)) {
+-                this->cumeffort_per_yearquarter_per_fgrounds.at(idx_node_r) += PING_RATE;
++                this->cumeffort_per_yearquarter_per_fgrounds.at(idx_node_r) += (PING_RATE * m_fishing_fraction);
+             }
+             if (dyn_alloc_sce.option(Options::experiencedCPUEsPerMet) || dyn_alloc_sce.option(Options::experiencedCPUEsPerYearQuarter)) {
+-                this->cumeffort_per_trip_per_fgrounds_per_met.at(idx_node_r).at(met) += PING_RATE;
++                this->cumeffort_per_trip_per_fgrounds_per_met.at(idx_node_r).at(met) += (PING_RATE * m_fishing_fraction);
+             }
+ 
+ 
