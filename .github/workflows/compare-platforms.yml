@@ -51,7 +51,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake git patchelf file binutils sqlite3 \
-            libboost-all-dev libgeographiclib-dev libgdal-dev libsqlite3-dev
+            libboost-all-dev libgdal-dev libsqlite3-dev
+          # Ubuntu 22.04 names it libgeographic-dev; 24.04 libgeographiclib-dev.
+          sudo apt-get install -y --no-install-recommends libgeographiclib-dev ||
+            sudo apt-get install -y --no-install-recommends libgeographic-dev
 
       - name: Install dependencies (macOS)
         if: matrix.label == 'macos'

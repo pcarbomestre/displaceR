@@ -123,8 +123,9 @@ directory under the cache, keyed by its label.
 
 ```r
 displace_versions()                       # what the manifest can install
-install_displace()                        # the pinned default: 1.8.0 + westcoast patches (-repro)
-install_displace("1.8.0-96eadecb")        # plain upstream 1.8.0 (also for Windows)
+install_displace()                        # the pinned default: plain upstream 1.9.3
+install_displace("1.8.0-96eadecb-westcoast-repro")  # 1.8.0 + westcoast patches
+install_displace("1.8.0-96eadecb")        # plain upstream 1.8.0
 install_displace("1.6.6-7f2656fb-beta2")  # the previous version
 displace_installed()                      # what is on this machine
 

@@ -415,6 +415,22 @@ FEATURE_OPTIONS <- c(grounds_by_port = "grounds-by-port",
                      shortest_paths = "shortest-paths",
                      timestep_accounting = "timestep-accounting",
                      partial_fishing = "timestep-accounting")
+NATIVE_FROM_1_9 <- c("grounds_by_port", "out_of_range_implicit",
+                     "timestep_accounting", "partial_fishing")
+
+## DISPLACE version of a binary (numeric_version), from the install record or
+## build-info.json beside it; NA when neither says.
+binary_displace_version <- function(binary) {
+  dir <- dirname(binary)
+  v <- NA_character_
+  rec <- file.path(dir, "displaceR-install.txt")
+  if (file.exists(rec)) {
+    hit <- grep("^displace_version: ", readLines(rec, warn = FALSE), value = TRUE)
+    if (length(hit)) v <- trim(sub("^displace_version: ", "", hit[1]))
+  }
+  if (is.na(v)) v <- read_build_info(dir)$displace_version %||% NA_character_
+  numeric_version(v, strict = FALSE)
+}
 
 check_binary_features <- function(binary, input_dir, input_name, scenario) {
   path <- simusspe_file(input_dir, input_name, paste0(scenario, ".dat"))
@@ -428,6 +444,15 @@ check_binary_features <- function(binary, input_dir, input_name, scenario) {
   wanted <- FEATURE_OPTIONS[names(FEATURE_OPTIONS) %in% sc$dyn_alloc_sce]
   if (!length(wanted)) {
     return(invisible(TRUE))
+  }
+  ## Upstream v1.9.0 ships these options itself (and makes the time budget the
+  ## default), so a plain build of it needs no feature patch for them.
+  ver <- binary_displace_version(binary)
+  if (!is.na(ver) && ver >= "1.9.0") {
+    wanted <- wanted[!names(wanted) %in% NATIVE_FROM_1_9]
+    if (!length(wanted)) {
+      return(invisible(TRUE))
+    }
   }
   have <- binary_feature_patches(binary)
   missing <- if (identical(have, NA_character_)) wanted else wanted[!wanted %in% have]
