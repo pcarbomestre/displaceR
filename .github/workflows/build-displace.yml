@@ -96,12 +96,12 @@ jobs:
             sudo apt-get install -y --no-install-recommends libgeographic-dev
             L=/usr/lib/x86_64-linux-gnu
             sudo ln -sf "$L/libGeographic.so" "$L/libGeographicLib.so"
-            # gcc 11 misreads Boost 1.74's this->template set<0>() as std::set
-            # (Node.h has using namespace std). gcc 12 does not; 22.04's own
-            # libstdc++ is gcc 12's, so the runtime floor is unchanged.
-            sudo apt-get install -y --no-install-recommends g++-12
-            echo "CC=gcc-12" >> "$GITHUB_ENV"
-            echo "CXX=g++-12" >> "$GITHUB_ENV"
+            # gcc < 13 resolves Boost's this->template set<0>() to std::set
+            # (Node.h has using namespace std). clang does not, and links the
+            # system libstdc++, so the runtime floor is unchanged.
+            sudo apt-get install -y --no-install-recommends clang-14
+            echo "CC=clang-14" >> "$GITHUB_ENV"
+            echo "CXX=clang++-14" >> "$GITHUB_ENV"
           }
 
       - name: Record toolchain
