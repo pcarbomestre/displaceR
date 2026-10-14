@@ -1,0 +1,138 @@
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 187a5db8..864bea8f 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -55,6 +55,7 @@
+ #include <stdexcept>
+ 
+ #include <VesselDebugHelper.h>
++#include <seeded_shuffle.h>
+ 
+ 
+ 
+@@ -7848,9 +7849,7 @@ int Vessel::choose_another_ground_and_go_fishing(const SimModel& simModel,
+     a_vect.push_back(true);
+     a_vect.push_back(false);
+     //random_shuffle(a_vect.begin(),a_vect.end()); // depracted in C++17, use std::shuffle instead
+-    std::random_device rd;
+-    std::mt19937 g(rd());
+-    std::shuffle(a_vect.begin(), a_vect.end(), g);
++    seeded_shuffle(a_vect.begin(), a_vect.end()); // follows the simulation seed (rand())
+ 
+     if(a_vect[0])
+     {
+@@ -9399,9 +9398,7 @@ int Vessel::should_i_change_ground(const SimModel& simModel,
+         a_vect.push_back(false);
+         
+         //random_shuffle (a_vect.begin(), a_vect.end() ); // depracted in C++17, use std::shuffle instead
+-        std::random_device rd;
+-        std::mt19937 g(rd());
+-        std::shuffle(a_vect.begin(), a_vect.end(), g);
++        seeded_shuffle(a_vect.begin(), a_vect.end()); // follows the simulation seed (rand())
+ 
+ 
+         shall_I_change_to_another_ground = a_vect[0] &&
+diff --git a/commons/diffusion.cpp b/commons/diffusion.cpp
+index a388ef26..51f961b8 100644
+--- a/commons/diffusion.cpp
++++ b/commons/diffusion.cpp
+@@ -20,6 +20,7 @@
+ 
+ 
+ #include <diffusion.h>
++#include <seeded_shuffle.h>
+ 
+ 
+ namespace bg = boost::geometry;
+@@ -82,9 +83,7 @@ bool diffuse_Nitrogen_with_gradients(vector<Node*>&list_of_nodes,
+         list_of_nodes_idx.push_back(list_of_nodes.at(n)->get_idx_node());
+         }
+ 	 //random_shuffle (list_of_nodes_idx.begin(), list_of_nodes_idx.end() ); // depracted in C++17, use std::shuffle instead
+-     std::random_device rd;
+-     std::mt19937 g(rd());
+-     std::shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end(), g);
++     seeded_shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end()); // follows the simulation seed (rand())
+ 
+ 
+      for (int n=0; n<list_of_nodes_idx.size(); ++n)
+@@ -160,9 +159,7 @@ bool diffuse_Nitrogen_in_every_directions(vector<Node*>&list_of_nodes, adjacency
+        list_of_nodes_idx.push_back(list_of_nodes.at(n)->get_idx_node());
+        }
+     //random_shuffle (list_of_nodes_idx.begin(), list_of_nodes_idx.end() ); // depracted in C++17, use std::shuffle instead
+-    std::random_device rd;
+-    std::mt19937 g(rd());
+-    std::shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end(), g);
++    seeded_shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end()); // follows the simulation seed (rand())
+ 
+     for (int n=0; n<list_of_nodes_idx.size(); ++n)
+        {
+@@ -242,9 +239,7 @@ bool diffuse_Benthos_in_every_directions(vector<Node*>&list_of_nodes, adjacency_
+        list_of_nodes_idx.push_back(list_of_nodes.at(n)->get_idx_node());
+        }
+     //random_shuffle (list_of_nodes_idx.begin(), list_of_nodes_idx.end() ); // depracted in C++17, use std::shuffle instead
+-    std::random_device rd;
+-    std::mt19937 g(rd());
+-    std::shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end(), g);
++    seeded_shuffle(list_of_nodes_idx.begin(), list_of_nodes_idx.end()); // follows the simulation seed (rand())
+ 
+     for (int n=0; n<list_of_nodes_idx.size(); ++n)
+        {
+diff --git a/include/seeded_shuffle.h b/include/seeded_shuffle.h
+new file mode 100644
+index 00000000..a5cebd9e
+--- /dev/null
++++ b/include/seeded_shuffle.h
+@@ -0,0 +1,30 @@
++// seeded_shuffle: a random permutation that follows the simulation seed.
++//
++// SimModel::initRandom() seeds the global rand() from the simulation name, and
++// every stochastic decision draws from it, so the same name gives the same run.
++// std::random_shuffle (removed in C++17) drew from rand(); its replacement by
++// std::shuffle with a std::random_device seeds from the operating system
++// instead, and runs are no longer reproducible. This is the historical
++// libstdc++ random_shuffle (same iteration, same rand() % (i + 1) index, same
++// swap), so given the same seed it gives the same permutation as before.
++#ifndef SEEDED_SHUFFLE_H
++#define SEEDED_SHUFFLE_H
++
++#include <algorithm>
++#include <cstdlib>
++#include <iterator>
++
++template <typename RandomAccessIterator>
++inline void seeded_shuffle(RandomAccessIterator first, RandomAccessIterator last)
++{
++    if (first == last)
++        return;
++    typedef typename std::iterator_traits<RandomAccessIterator>::difference_type diff_t;
++    for (RandomAccessIterator i = first + 1; i != last; ++i) {
++        RandomAccessIterator j = first + static_cast<diff_t>(std::rand() % ((i - first) + 1));
++        if (i != j)
++            std::iter_swap(i, j);
++    }
++}
++
++#endif // SEEDED_SHUFFLE_H
+diff --git a/simulator/main.cpp b/simulator/main.cpp
+index 2f50345f..47665353 100644
+--- a/simulator/main.cpp
++++ b/simulator/main.cpp
+@@ -266,6 +266,7 @@ std::shared_ptr<sql::Storage> indb;
+ #ifdef NO_IPC
+ #include <messages/noipc.h>
+ #endif
++#include <seeded_shuffle.h>
+ 
+ static size_t numStepTransactions = 200;
+ 
+@@ -2873,9 +2874,7 @@ int app_main(int argc, char const* argv[])
+         // random permutation
+ 
+         lock();
+-        std::random_device rd;
+-        std::mt19937 g(rd());
+-        std::shuffle(ve.begin(), ve.end(), g);
++        seeded_shuffle(ve.begin(), ve.end()); // follows the simulation seed (rand())
+         unlock();
+ 
+         // check that departure is done from harbours that are
