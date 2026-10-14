@@ -90,8 +90,13 @@ jobs:
             build-essential cmake git patchelf file binutils sqlite3 \
             libboost-all-dev libgdal-dev libsqlite3-dev
           # Ubuntu 22.04 names it libgeographic-dev; 24.04 libgeographiclib-dev.
-          sudo apt-get install -y --no-install-recommends libgeographiclib-dev ||
+          # 22.04 also names the library libGeographic.so (1.x), which upstream's
+          # cmake/debian/FindGeographicLib.cmake does not search for.
+          sudo apt-get install -y --no-install-recommends libgeographiclib-dev || {
             sudo apt-get install -y --no-install-recommends libgeographic-dev
+            L=/usr/lib/x86_64-linux-gnu
+            sudo ln -sf "$L/libGeographic.so" "$L/libGeographicLib.so"
+          }
 
       - name: Record toolchain
         run: |
