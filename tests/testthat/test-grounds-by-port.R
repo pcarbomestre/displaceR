@@ -139,6 +139,42 @@ test_that("run_displace refuses timestep_accounting on a binary without the patc
                              output_dir = tempfile()))
 })
 
+test_that("a plain DISPLACE >= 1.9.0 runs the options upstream adopted, not shortest_paths", {
+  inp <- make_fake_input()
+  sc <- inp$scenario_obj
+  sc$dyn_alloc_sce <- c("baseline", "grounds_by_port", "out_of_range_implicit",
+                        "timestep_accounting", "partial_fishing")
+  write_displace_scenario(sc, inp$dir, inp$input_name, scenario = "v19")
+  sc$dyn_alloc_sce <- c("baseline", "grounds_by_port", "shortest_paths")
+  write_displace_scenario(sc, inp$dir, inp$input_name, scenario = "sp")
+
+  bindir <- tempfile(); dir.create(bindir)
+  bin <- file.path(bindir, "displace")
+  file.copy(exit_binary("true"), bin)
+  Sys.chmod(bin, "0755")
+  skip_if_not_installed("jsonlite")
+  jsonlite::write_json(list(upstream_sha = "7cf6378e", displace_version = "1.9.3",
+                            feature_patches = ""),
+                       file.path(bindir, "build-info.json"), auto_unbox = TRUE)
+  expect_silent(run_displace(inp$dir, inp$input_name, scenario = "v19", steps = 10,
+                             binary = bin, echo = FALSE, sqlite = FALSE,
+                             output_dir = tempfile()))
+  expect_error(
+    run_displace(inp$dir, inp$input_name, scenario = "sp", steps = 10,
+                 binary = bin, echo = FALSE, sqlite = FALSE, output_dir = tempfile()),
+    "shortest_paths, which need"
+  )
+  ## 1.8.0 still needs the patches
+  jsonlite::write_json(list(upstream_sha = "96eadecb", displace_version = "1.8.0",
+                            feature_patches = ""),
+                       file.path(bindir, "build-info.json"), auto_unbox = TRUE)
+  expect_error(
+    run_displace(inp$dir, inp$input_name, scenario = "v19", steps = 10,
+                 binary = bin, echo = FALSE, sqlite = FALSE, output_dir = tempfile()),
+    "grounds-by-port"
+  )
+})
+
 test_that("a feature-patched local build gets its own install label", {
   info <- list(upstream_sha = "96eadecb1980d6f9ad22571cd6f963cc05379815",
                displace_version = "1.8.0")

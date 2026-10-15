@@ -43,6 +43,10 @@ document it as a known limitation.
   N depletion, closures), and the user made 1.8.0 the manifest default
   (2026-09-23). Upstream 1.6.6 was never tagged: `7f2656fb` = `v1.6.5` + the
   version.h bump `8cda73cc` + an HPC compile fix. See NEWS.md and `docs/upstream-issues.md` 16.
+- 1.9.3 = HEAD `7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c` (2026-10-14), commit
+  "v1.9.3", **not tagged**; reports `1.9.3 build 0`. Builds plain, no feature
+  patches (upstream absorbed ours). The manifest default since 2026-10-14
+  (`1.9.3-7cf6378e`).
 
 ## Architecture (three layers, deliberately separate)
 

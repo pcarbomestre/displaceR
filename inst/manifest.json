@@ -40,8 +40,43 @@
       }
     }
   },
-  "default": "1.8.0-96eadecb-westcoast-repro",
+  "default": "1.9.3-7cf6378e",
   "versions": {
+    "1.9.3-7cf6378e": {
+      "upstream_sha": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
+      "upstream_ref": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
+      "displace_version": "1.9.3",
+      "displace_build": "0",
+      "released": "2026-10-14",
+      "note": [
+        "Upstream 1.9.3: HEAD 7cf6378e, commit 'v1.9.3', not tagged. The manifest default",
+        "since 2026-10-14. No feature patches: upstream ships grounds_by_port,",
+        "out_of_range_implicit, partial_fishing, seeded shuffles and the A*/do_sample fixes",
+        "itself, and the 1 h time budget is on by default (old_timestep_accounting turns it",
+        "off), so vmslike is segmented (11 columns). shortest_paths is not available.",
+        "Results differ from every 1.8.0 build."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7cf6378e/displace-7cf6378e642a-linux-x86_64-glibc2.39.tar.gz",
+          "sha256": "3dcf54809afbd233b8f872953cda75fff1e81d838f2ab383bad10ad6642d9620",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7cf6378e/displace-7cf6378e642a-macos-arm64.tar.gz",
+          "sha256": "f5ce352293ea6a5cab04cfe44ead6c7b51198539ea330ee766681b71a030ab20",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        },
+        "windows-x86_64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7cf6378e/displace-7cf6378e642a-windows-x86_64.tar.gz",
+          "sha256": "09d6117b33269cea71db809b42decddd6298de43dda0eb4f003c5887c5ccd42a",
+          "arch": "x86_64",
+          "built_on": "windows-2022"
+        }
+      }
+    },
     "1.8.0-96eadecb-westcoast": {
       "upstream_sha": "96eadecb1980d6f9ad22571cd6f963cc05379815",
       "upstream_ref": "v1.8.0",

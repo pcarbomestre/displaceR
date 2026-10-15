@@ -1,3 +1,18 @@
+# displaceR 0.1.0.9004
+
+* The manifest default is now `1.9.3-7cf6378e`: plain upstream DISPLACE 1.9.3
+  (HEAD `7cf6378e`, not tagged upstream), with no feature patches. Published for
+  Linux (glibc >= 2.39), macOS arm64 and Windows x86_64. Results differ from
+  every 1.8.0 build: upstream now ships `grounds_by_port`,
+  `out_of_range_implicit`, `partial_fishing`, shuffles that follow the
+  simulation seed and the A* and `do_sample()` fixes, and makes the 1 h time
+  budget the default (`old_timestep_accounting` turns it off), so `vmslike` is
+  segmented. `shortest_paths` is not available on 1.9.3. The 1.8.0 builds stay
+  installable by name.
+* `run_displace()` no longer asks a DISPLACE >= 1.9.0 binary for feature
+  patches for `grounds_by_port`, `out_of_range_implicit`, `timestep_accounting`
+  and `partial_fishing`.
+
 # displaceR 0.1.0.9003
 
 * New DISPLACE build in the manifest, a pre-release (Linux glibc 2.39 and macOS
