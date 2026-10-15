@@ -57,6 +57,9 @@ know this option (it does not refuse scenarios with it).
 
 ## Open
 
-- Off-check (option off = plain 1.9.3, byte for byte) submitted 2026-10-15
-  (job 1182716); result to record here.
-- First test: westcoast validation_1.0rcr, 5 replicates x 13 y (job 1182717).
+- Off-check PASSED 2026-10-15: option off, westcoast validation_1.0 simu1,
+  13 y: 36 of 38 outputs byte-identical to plain 1.9.3 (memstats and
+  popdyn_annual_indic excepted, as between any two runs).
+- First test: westcoast validation_1.0rcr, 5 replicates x 13 y: shelf excess
+  reduced but effort overshoots onto the slope, fishing time +14.5%
+  (uncalibrated); see the analysis repo's calibration/ROW_CATCH_RATES.md.
