@@ -1,0 +1,283 @@
+diff --git a/commons/TextImpl/LoadVesselsImpl.cpp b/commons/TextImpl/LoadVesselsImpl.cpp
+index d87abb8a..bc0595e6 100644
+--- a/commons/TextImpl/LoadVesselsImpl.cpp
++++ b/commons/TextImpl/LoadVesselsImpl.cpp
+@@ -287,6 +287,54 @@ bool read_catchrates_per_metier_harbour(const std::string & a_vessel, const std:
+ }
+ 
+ 
++// displaceR dd-learning: read vesselsspe_<fname>/dd_learning_params.dat into
++// Vessel::dd_learning_params. Lines "key value" (keys: dd_beta, dd_max_ratio,
++// learn_lambda, learn_alpha, learn_min_factor, learn_max_factor); no file:
++// the defaults. An unknown key or a value out of range is an error.
++void read_dd_learning_params(const std::string & fname, const std::string & folder)
++{
++    std::string filename = folder + "/vesselsspe_" + fname + "/dd_learning_params.dat";
++    Vessel::DdLearningParams p;
++    std::ifstream in(filename.c_str());
++    bool found = !in.fail();
++    if (found) {
++        std::string line;
++        int linenum = 0;
++        while (std::getline(in, line)) {
++            ++linenum;
++            size_t first = line.find_first_not_of(" \t\r");
++            if (first == std::string::npos || line[first] == '#') continue;
++            std::istringstream ss(line);
++            std::string key;
++            double val = 0.0;
++            bool ok = static_cast<bool>(ss >> key >> val) && std::isfinite(val) && val >= 0;
++            if (ok) {
++                if (key == "dd_beta") p.dd_beta = val;
++                else if (key == "dd_max_ratio") { ok = val > 0; p.dd_max_ratio = val; }
++                else if (key == "learn_lambda") p.learn_lambda = val;
++                else if (key == "learn_alpha") { ok = val > 0 && val <= 1; p.learn_alpha = val; }
++                else if (key == "learn_min_factor") { ok = val > 0; p.learn_min_factor = val; }
++                else if (key == "learn_max_factor") { ok = val > 0; p.learn_max_factor = val; }
++                else ok = false;
++            }
++            if (!ok) {
++                std::stringstream er;
++                er << "dd-learning: cannot use line " << linenum << " of " << filename
++                   << " (expected: key value; keys dd_beta, dd_max_ratio, learn_lambda, learn_alpha (0-1], learn_min_factor, learn_max_factor)";
++                throw std::runtime_error(er.str());
++            }
++        }
++        if (p.learn_min_factor > p.learn_max_factor)
++            throw std::runtime_error("dd-learning: learn_min_factor > learn_max_factor in " + filename);
++    }
++    Vessel::dd_learning_params = p;
++    cout << "dd-learning: " << (found ? "read dd_learning_params.dat" : "no dd_learning_params.dat, defaults")
++         << ": dd_beta " << p.dd_beta << " dd_max_ratio " << p.dd_max_ratio << " learn_lambda " << p.learn_lambda
++         << " learn_alpha " << p.learn_alpha << " learn_min_factor " << p.learn_min_factor
++         << " learn_max_factor " << p.learn_max_factor << "\n";
++}
++
++
+ // grounds_by_port: keep the entries the simulator can use for this vessel and
+ // quarter. A ground must be one of the vessel's fgrounds (its per-node catch rates
+ // and the per-ground bookkeeping are indexed on them), the metier must exist, the
+@@ -842,6 +890,10 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+     }
+ 
+ 
++    if (model.scenario().dyn_alloc_sce.option(Options::density_dependent_catch) ||
++        model.scenario().dyn_alloc_sce.option(Options::ground_learning)) {
++        read_dd_learning_params(fname, folder); // displaceR dd-learning
++    }
+     if (model.scenario().dyn_alloc_sce.option(Options::catch_rate_by_row)) {
+         int with_rates = 0;
+         for (auto v : vessels) if (v->has_row_catch_rates()) ++with_rates;
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 5306e4da..d0098be8 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -2704,6 +2704,46 @@ std::vector<int> Vessel::port_ground_entries_of(types::NodeId p) const
+   return idx;  
+ }
+ 
++// displaceR dd-learning
++Vessel::DdLearningParams Vessel::dd_learning_params;
++
++void Vessel::update_ground_learning()
++{
++    // per-trip sums of the grounds fished (cumeffort_per_trip_per_fgrounds adds
++    // the step's hours once per pop: the same scale on every node and in the
++    // vessel total, so the factor's ratio is unaffected)
++    const auto& grds = this->get_fgrounds();
++    const double a = dd_learning_params.learn_alpha;
++    size_t n = std::min(grds.size(), std::min(cumeffort_per_trip_per_fgrounds.size(), cumcatch_fgrounds.size()));
++    double C = 0.0, E = 0.0;
++    for (size_t i = 0; i < n; ++i) {
++        double e = cumeffort_per_trip_per_fgrounds.at(i);
++        if (e <= 0.0) continue;
++        double c = cumcatch_fgrounds.at(i);
++        double r = c / e;
++        int key = static_cast<int>(grds.at(i).toIndex());
++        auto it = learned_cpue_nodes.find(key);
++        if (it == learned_cpue_nodes.end()) learned_cpue_nodes[key] = r;
++        else it->second = (1.0 - a) * it->second + a * r;
++        C += c;
++        E += e;
++    }
++    if (E > 0.0) {
++        double r = C / E;
++        learned_cpue_vessel = learned_cpue_vessel < 0.0 ? r : (1.0 - a) * learned_cpue_vessel + a * r;
++    }
++}
++
++double Vessel::ground_learning_factor(types::NodeId n) const
++{
++    if (!(learned_cpue_vessel > 0.0)) return 1.0;
++    auto it = learned_cpue_nodes.find(static_cast<int>(n.toIndex()));
++    if (it == learned_cpue_nodes.end()) return 1.0;
++    const auto& p = dd_learning_params;
++    double f = std::pow(std::max(it->second / learned_cpue_vessel, 1e-12), p.learn_lambda);
++    return std::min(std::max(f, p.learn_min_factor), p.learn_max_factor);
++}
++
+ bool Vessel::is_port_ground_banned(const PortGroundEntry & e, const vector<Node*> &nodes) const
+ {
+         // same rule as the per-ground checks under area_monthly_closure,
+@@ -3895,6 +3935,19 @@ void Vessel::handle_explicit_population(
+             populations.at(popIdx)->get_cpue_multiplier() * this->get_metier()->get_catchrate_multiplier() *
+             tech_creeping_multiplier * m_fishing_fraction;
+     }
++    // displaceR dd-learning (density_dependent_catch): the potential follows the
++    // node's available biomass relative to the same node at the start of the
++    // simulation (same selectivity and weights); no reference: unchanged
++    if (dyn_alloc_sce.option(Options::density_dependent_catch)) {
++        const std::vector<double>& refNs = get_loc()->get_ref_Ns_pops_at_szgroup(popName);
++        double refAvail = 0.0;
++        for (size_t sz = 0; sz < refNs.size() && sz < Ns.size(); ++sz)
++            refAvail += refNs[sz] * wsz[sz] * m.selectivity[popIdx][sz];
++        if (refAvail > 0.0) {
++            double ratio = std::min(totAvail / refAvail, dd_learning_params.dd_max_ratio);
++            catchPotential *= std::pow(ratio, dd_learning_params.dd_beta);
++        }
++    }
+ 
+    
+     double totCatchWeight = std::min(totAvail, catchPotential);
+@@ -7272,6 +7325,8 @@ bool Vessel::choose_a_ground_and_go_fishing(const SimModel& simModel,
+         {
+             const auto& e = entries.at(port_entries[k]);
+             w[k] = e.weight;
++            // displaceR dd-learning (ground_learning): the vessel's experience of the node
++            if (dyn_alloc_sce.option(Options::ground_learning)) w[k] *= this->ground_learning_factor(e.ground);
+             // area_monthly_closure: same open-days rule as for the vessel's grounds
+                 // below, applied with the entry's own metier
+                 if (dyn_alloc_sce.option(Options::area_monthly_closure) &&
+@@ -8383,6 +8438,7 @@ void Vessel::reinit_after_a_trip(const DynAllocOptions& dyn_alloc_sce)
+     this-> set_cumcatches(0);
+     this-> set_cumdiscards(0);
+     this-> clear_idx_used_metiers_this_trip();
++    if (dyn_alloc_sce.option(Options::ground_learning)) this->update_ground_learning(); // displaceR dd-learning
+     this-> compute_experiencedcpue_fgrounds();
+     this-> compute_experiencedcpue_fgrounds_per_pop(); 
+     if(dyn_alloc_sce.option(Options::experiencedCPUEsPerMet) || dyn_alloc_sce.option(Options::experiencedCPUEsPerYearQuarter)) this-> compute_experiencedcpue_fgrounds_per_met_per_pop();
+diff --git a/commons/options.cpp b/commons/options.cpp
+index f7930f2b..36e737e8 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -100,6 +100,8 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, partial_fishing);
+     O(mMap, grounds_by_port);
+     O(mMap, catch_rate_by_row);
++    O(mMap, density_dependent_catch);
++    O(mMap, ground_learning);
+ 
+   
+ 
+diff --git a/include/Node.h b/include/Node.h
+index f5ba3f46..c9fac0ce 100644
+--- a/include/Node.h
++++ b/include/Node.h
+@@ -292,6 +292,17 @@ class  Node
+ 		void init_Ns_pops_at_szgroup(int nbpops, int nbszgroups, int nbmets);
+         void set_Ns_pops_at_szgroup(int name_pop, const vector<double>& val);
+         void set_Ns_pops_at_szgroup_at_month_start(int name_pop, const vector<double>& val);        
++        // displaceR dd-learning (density_dependent_catch): numbers at szgroup on
++        // this node at the start of the simulation, the reference of the catch
++        // potential's density factor; empty if not stored
++        void set_ref_Ns_pops_at_szgroup(int name_pop, const vector<double>& val) {
++            if (static_cast<int>(ref_Ns_pops_at_szgroup.size()) <= name_pop) ref_Ns_pops_at_szgroup.resize(name_pop + 1);
++            ref_Ns_pops_at_szgroup[name_pop] = val;
++        }
++        const vector<double>& get_ref_Ns_pops_at_szgroup(int name_pop) const {
++            static const vector<double> none;
++            return name_pop >= 0 && name_pop < static_cast<int>(ref_Ns_pops_at_szgroup.size()) ? ref_Ns_pops_at_szgroup[name_pop] : none;
++        }
+         void set_removals_pops_at_szgroup(int name_pop, const vector<double>& val);
+         void set_last_oth_catch_pops_at_szgroup(int name_pop, const vector<double>& val);
+         void set_last_oth_disc_pops_at_szgroup(int name_pop, const vector<double>& val);
+@@ -521,6 +532,7 @@ private:
+         double nbchoked;
+         vector< vector<double> > Ns_pops_at_szgroup;
+ 		vector< vector<double> > Ns_pops_at_szgroup_at_month_start;
++        vector< vector<double> > ref_Ns_pops_at_szgroup; // displaceR dd-learning
+ 		vector< vector<double> > removals_pops_at_szgroup;
+         vector< vector<double> > last_oth_catch_pops_at_szgroup;
+         vector< vector<double> > last_oth_disc_pops_at_szgroup;
+diff --git a/include/Vessel.h b/include/Vessel.h
+index ddbe42b0..ea9dc4a8 100644
+--- a/include/Vessel.h
++++ b/include/Vessel.h
+@@ -174,6 +174,10 @@ private:
+         types::NodeId trip_port = types::special::InvalidNodeId;
+         // displaceR row-catch-rates: (metier, harbour node, pop) -> kg per hour
+         std::map<std::tuple<int, int, int>, double> row_catch_rates;
++        // displaceR dd-learning (ground_learning): node index -> remembered
++        // catch per fishing hour; the vessel's remembered rate (< 0: none yet)
++        std::map<int, double> learned_cpue_nodes;
++        double learned_cpue_vessel = -1.0;
+         // node the current/last trip departed from (previous_harbour_idx is reset
+         // to 0 at every quarterly reload, so it cannot serve as a record)
+         types::NodeId trip_dep_port = types::special::InvalidNodeId;
+@@ -439,6 +443,25 @@ public:
+         bool has_row_catch_rates() const { return !row_catch_rates.empty(); }
+         // the rate of the current metier and trip port for pop; false if none
+         bool get_row_catch_rate(int popIdx, double &rate);
++
++        // displaceR dd-learning: parameters of density_dependent_catch and
++        // ground_learning (vesselsspe_*/dd_learning_params.dat, "key value"
++        // lines; these defaults otherwise), the same for every vessel
++        struct DdLearningParams {
++            double dd_beta = 1.0;          // exponent of the density factor
++            double dd_max_ratio = 10.0;    // cap of available / reference biomass
++            double learn_lambda = 1.0;     // exponent of the learning factor
++            double learn_alpha = 0.3;      // weight of the last trip in the remembered rates
++            double learn_min_factor = 0.1; // bounds of the learning factor
++            double learn_max_factor = 10.0;
++        };
++        static DdLearningParams dd_learning_params;
++        // ground_learning: after a trip, update the remembered catch per
++        // fishing hour of each node fished and of the vessel overall
++        void update_ground_learning();
++        // ground_learning: (remembered rate on node / vessel's remembered
++        // rate)^learn_lambda, bounded; 1 for a node never fished
++        double ground_learning_factor(types::NodeId n) const;
+         
+ 
+ 		int get_idx () const;
+diff --git a/include/options.h b/include/options.h
+index bcb390f3..0600c140 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -158,6 +158,8 @@ enum Dyn_Alloc {
+     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 
+     grounds_by_port, 
+     catch_rate_by_row, // displaceR row-catch-rates: catch rate of the trip's vessel-metier-port row (<vid>_catchrates_per_metier_harbour.dat)
++    density_dependent_catch, // displaceR dd-learning: explicit catch potential x (node available biomass / its value at the start)^dd_beta
++    ground_learning, // displaceR dd-learning: grounds_by_port ground draw weighted by the vessel's remembered catch per hour on each node
+ 
+     Dyn_Alloc_last
+ };
+diff --git a/simulator/main.cpp b/simulator/main.cpp
+index 6505db86..c1f5b735 100644
+--- a/simulator/main.cpp
++++ b/simulator/main.cpp
+@@ -1999,6 +1999,23 @@ int app_main(int argc, char const* argv[])
+     /* CALLGRING -- Instrument */
+     CALLGRIND_START_INSTRUMENTATION;
+ 
++    // displaceR dd-learning (density_dependent_catch): each node's numbers at
++    // szgroup of the explicit pops at the start, the reference of the catch
++    // potential's density factor
++    if (simModel->scenario().dyn_alloc_sce.option(Options::density_dependent_catch)) {
++        int nb_ref = 0;
++        for (unsigned int sp = 0; sp < simModel->populations().size(); ++sp) {
++            if (binary_search(simModel->config().implicit_pops.begin(), simModel->config().implicit_pops.end(), sp)) continue;
++            int name_pop = simModel->populations().at(sp)->get_name();
++            for (unsigned int n = 0; n < simModel->nodes().size(); ++n) {
++                simModel->nodes().at(n)->set_ref_Ns_pops_at_szgroup(name_pop, simModel->nodes().at(n)->get_Ns_pops_at_szgroup(name_pop));
++                ++nb_ref;
++            }
++        }
++        cout << "density_dependent_catch: reference numbers stored (" << nb_ref << " node x pop), dd_beta "
++             << Vessel::dd_learning_params.dd_beta << ", dd_max_ratio " << Vessel::dd_learning_params.dd_max_ratio << "\n";
++    }
++
+     simModel->initTimestep();
+     while (simModel->timestep() < nbsteps) {
+         if (enable_sqlite_out && (simModel->timestep() % numStepTransactions) == 0) {
