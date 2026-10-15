@@ -346,7 +346,7 @@ committed. See [`docs/upstream-issues.md`](docs/upstream-issues.md).
 ## Status
 
 The R package is complete and tested. `install_displace()` downloads DISPLACE
-1.8.0 for Linux x86_64 (glibc 2.39), macOS Apple Silicon and Windows x86_64.
+1.9.3 for Linux x86_64 (glibc 2.39), macOS Apple Silicon and Windows x86_64.
 
 **Verified where:** every published binary is built in CI and runs the minitest
 case study before it is released. On Linux and Windows CI also runs the
