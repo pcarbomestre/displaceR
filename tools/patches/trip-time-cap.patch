@@ -1,0 +1,139 @@
+diff --git a/commons/TextImpl/LoadVesselsImpl.cpp b/commons/TextImpl/LoadVesselsImpl.cpp
+index d87abb8a..03fbacc5 100644
+--- a/commons/TextImpl/LoadVesselsImpl.cpp
++++ b/commons/TextImpl/LoadVesselsImpl.cpp
+@@ -287,6 +287,37 @@ bool read_catchrates_per_metier_harbour(const std::string & a_vessel, const std:
+ }
+ 
+ 
++// displaceR trip-time-cap: read vesselsspe_<fname>/vessels_max_trip_hours.dat
++// (heading line, then "VE_REF hours"). Returns false if there is no file; a
++// malformed line is an error.
++bool read_vessels_max_trip_hours(const std::string & fname, const std::string & folder,
++    std::map<std::string, double> &caps)
++{
++    caps.clear();
++    std::string filename = folder + "/vesselsspe_" + fname + "/vessels_max_trip_hours.dat";
++    std::ifstream in(filename.c_str());
++    if (in.fail()) return false;
++    std::string line;
++    std::getline(in, line); // heading
++    int linenum = 1;
++    while (std::getline(in, line)) {
++        ++linenum;
++        if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
++        std::istringstream ss(line);
++        std::string vid;
++        double h;
++        if (!(ss >> vid >> h) || !std::isfinite(h) || h <= 0) {
++            std::stringstream er;
++            er << "trip_time_cap: cannot use line " << linenum << " of " << filename
++               << " (expected: VE_REF hours, hours > 0)";
++            throw std::runtime_error(er.str());
++        }
++        caps[vid] = h;
++    }
++    return true;
++}
++
++
+ // grounds_by_port: keep the entries the simulator can use for this vessel and
+ // quarter. A ground must be one of the vessel's fgrounds (its per-node catch rates
+ // and the per-ground bookkeeping are indexed on them), the metier must exist, the
+@@ -842,6 +873,19 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+     }
+ 
+ 
++    // displaceR trip-time-cap
++    if (model.scenario().dyn_alloc_sce.option(Options::trip_time_cap)) {
++        std::map<std::string, double> caps;
++        int with_cap = 0;
++        if (read_vessels_max_trip_hours(fname, folder, caps)) {
++            for (auto v : vessels) {
++                auto it = caps.find(v->get_name());
++                if (it != caps.end()) { v->set_max_trip_hours(it->second); ++with_cap; }
++            }
++        }
++        cout << "trip_time_cap: " << with_cap << " of " << vessels.size()
++             << " vessels have a cap in vessels_max_trip_hours.dat" << "\n";
++    }
+     if (model.scenario().dyn_alloc_sce.option(Options::catch_rate_by_row)) {
+         int with_rates = 0;
+         for (auto v : vessels) if (v->has_row_catch_rates()) ++with_rates;
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 5306e4da..d4b3c550 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -9595,8 +9595,21 @@ int Vessel::should_i_stop_fishing(const SimModel& simModel,
+             this->set_reason_to_go_back(3);
+         }
+ 
++        // displaceR trip-time-cap: go back when the time at sea plus the steaming
++        // to the nearest port reaches the vessel's cap (observed trip durations)
++        bool flag4 = true;
++        if (dyn_alloc_sce.option(Options::trip_time_cap) && this->get_max_trip_hours() > 0)
++        {
++            vector<double> d_ports = compute_distance_fgrounds_on_the_fly(nodes,
++                this->get_loc()->get_idx_node(), this->get_harbours());
++            double back_h = d_ports.empty() ? 0.0 :
++                *min_element(d_ports.begin(), d_ports.end()) / (this->get_speed() * NAUTIC);
++            flag4 = this->get_timeatsea() + back_h < this->get_max_trip_hours();
++            if (!flag4) this->set_reason_to_go_back(5);
++        }
++
+         int stop_fishing =1;
+-        if(flag1 && flag2 && flag3) stop_fishing =0;
++        if(flag1 && flag2 && flag3 && flag4) stop_fishing =0;
+ 
+         unlock();
+         return(stop_fishing);
+diff --git a/commons/options.cpp b/commons/options.cpp
+index f7930f2b..89c4d1a0 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -100,6 +100,7 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, partial_fishing);
+     O(mMap, grounds_by_port);
+     O(mMap, catch_rate_by_row);
++    O(mMap, trip_time_cap);
+ 
+   
+ 
+diff --git a/include/Vessel.h b/include/Vessel.h
+index ddbe42b0..ecac4624 100644
+--- a/include/Vessel.h
++++ b/include/Vessel.h
+@@ -174,6 +174,8 @@ private:
+         types::NodeId trip_port = types::special::InvalidNodeId;
+         // displaceR row-catch-rates: (metier, harbour node, pop) -> kg per hour
+         std::map<std::tuple<int, int, int>, double> row_catch_rates;
++        // displaceR trip-time-cap: see set_max_trip_hours()
++        double max_trip_hours = -1.0;
+         // node the current/last trip departed from (previous_harbour_idx is reset
+         // to 0 at every quarterly reload, so it cannot serve as a record)
+         types::NodeId trip_dep_port = types::special::InvalidNodeId;
+@@ -439,6 +441,12 @@ public:
+         bool has_row_catch_rates() const { return !row_catch_rates.empty(); }
+         // the rate of the current metier and trip port for pop; false if none
+         bool get_row_catch_rate(int popIdx, double &rate);
++
++        // displaceR trip-time-cap (dyn_alloc option trip_time_cap): hours at sea
++        // after which the vessel stops fishing and returns (time at sea +
++        // steaming to the nearest port >= cap; reason_to_go_back 5); <= 0: none
++        void set_max_trip_hours(double h) { max_trip_hours = h; }
++        double get_max_trip_hours() const { return max_trip_hours; }
+         
+ 
+ 		int get_idx () const;
+diff --git a/include/options.h b/include/options.h
+index bcb390f3..3c7c8990 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -158,6 +158,7 @@ enum Dyn_Alloc {
+     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 
+     grounds_by_port, 
+     catch_rate_by_row, // displaceR row-catch-rates: catch rate of the trip's vessel-metier-port row (<vid>_catchrates_per_metier_harbour.dat)
++    trip_time_cap, // displaceR trip-time-cap: stop fishing when time at sea + steaming back reaches the vessel's cap (vessels_max_trip_hours.dat)
+ 
+     Dyn_Alloc_last
+ };
