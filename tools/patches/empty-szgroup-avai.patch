@@ -1,0 +1,52 @@
+diff --git a/include/options.h b/include/options.h
+--- a/include/options.h
++++ b/include/options.h
+@@ -192,7 +192,8 @@
+     static_avai_2,
+     static_avai_3,
+     static_avai_4,
+-  
++    keepEmptySzgroupAvai, // displaceR empty-szgroup-avai: a size group with no fish on any node keeps its availability at the growth redispatch (instead of 0 everywhere, which deletes the fish growing or recruited into it)
++
+     Pop_Sce_last
+ };
+ 
+diff --git a/commons/options.cpp b/commons/options.cpp
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -141,6 +141,7 @@
+     O(mMap, static_avai_2);
+     O(mMap, static_avai_3);
+     O(mMap, static_avai_4);
++    O(mMap, keepEmptySzgroupAvai);
+ 
+ 
+     for (int i = 0; i < n(); ++i)
+diff --git a/simulator/biomodule2.cpp b/simulator/biomodule2.cpp
+--- a/simulator/biomodule2.cpp
++++ b/simulator/biomodule2.cpp
+@@ -1216,12 +1216,24 @@
+ 
+                             std::vector<double> new_avai_pops(a_tot_N_at_szgroup.size(), 0);
+                             newNs = node_list.at(n)->get_Ns_pops_at_szgroup(sp);
++                            // displaceR empty-szgroup-avai: a size group with no fish on any
++                            // node keeps its current availability (the input map until it
++                            // first holds fish), so the fish growing or recruited into it are
++                            // put back on the nodes by distribute_N() instead of deleted
++                            const bool keep_empty = dyn_pop_sce.option(Options::keepEmptySzgroupAvai);
++                            std::vector<double> old_avai_pops;
++                            if (keep_empty)
++                                old_avai_pops = populations.at(sp)->get_availability(node_list.at(n)->get_idx_node());
+                             for (unsigned int sz = 0; sz < a_tot_N_at_szgroup.size(); sz++)
+                                 if (accumulated_Ns[sz] != 0)
+                                 {
+                                     double val = (newNs[sz]) / (accumulated_Ns[sz]);
+                                     new_avai_pops.at(sz) = val;
+                                 }
++                                else if (keep_empty && sz < old_avai_pops.size())
++                                {
++                                    new_avai_pops.at(sz) = old_avai_pops[sz];
++                                }
+ 
+ 
+                             
