@@ -6,7 +6,7 @@ diff --git a/include/options.h b/include/options.h
      static_avai_3,
      static_avai_4,
 -  
-+    keepEmptySzgroupAvai, // displaceR empty-szgroup-avai: a size group with no fish on any node keeps its availability at the growth redispatch (instead of 0 everywhere, which deletes the fish growing or recruited into it)
++    keepEmptySzgroupAvai, // displaceR empty-szgroup-avai: accepted for older scenario files, no effect: a size group with no fish on any node now always keeps its availability at the growth redispatch (instead of 0 everywhere, which deletes the fish growing or recruited into it)
 +
      Pop_Sce_last
  };
@@ -32,8 +32,8 @@ diff --git a/simulator/biomodule2.cpp b/simulator/biomodule2.cpp
 +                            // displaceR empty-szgroup-avai: a size group with no fish on any
 +                            // node keeps its current availability (the input map until it
 +                            // first holds fish), so the fish growing or recruited into it are
-+                            // put back on the nodes by distribute_N() instead of deleted
-+                            const bool keep_empty = dyn_pop_sce.option(Options::keepEmptySzgroupAvai);
++                            // put back on the nodes by distribute_N() instead of deleted. Always on.
++                            const bool keep_empty = true; // (dyn_pop option keepEmptySzgroupAvai: accepted, no effect)
 +                            std::vector<double> old_avai_pops;
 +                            if (keep_empty)
 +                                old_avai_pops = populations.at(sp)->get_availability(node_list.at(n)->get_idx_node());

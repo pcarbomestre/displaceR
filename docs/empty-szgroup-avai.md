@@ -19,12 +19,14 @@ groups 0-1 (44% of recruits deleted).
 
 ## What it does
 
-New `dyn_pop_sce` option **`keepEmptySzgroupAvai`**: a size group with no fish
+Always on (UPDATED 2026-10-21; it was the `dyn_pop_sce` option
+**`keepEmptySzgroupAvai`**, off by default). The option name is still accepted
+so older scenario files run, but it has no effect. A size group with no fish
 on any node keeps its current availability instead of 0. A group empty from the
 start keeps the input map (`static_avai`) until it first holds fish, then
 follows its fish as every other group; a group that empties later keeps its
 last map. Fish growing or recruited into it are kept. Groups with fish are
-unchanged. Option off: DISPLACE as before.
+unchanged.
 
 ## Files touched
 
@@ -53,6 +55,11 @@ tools/build-displace.sh --ref 7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c \
   0), longspine groups 0-1 69 million (was 0); sablefish total numbers
   2023/2011 0.59 -> 1.72, landings ratio 0.80 -> 0.92 with no cpue change;
   Dover and shortspine unchanged (no empty groups); fits hold (block R2 0.906).
+
+- Always-on check PASSED 2026-10-21: the always-on build (`~/displace-esa2`)
+  on `validation_1.0cap_q90_s0695_sr` inputs (no option), simu1, 13 y: 36 of 38
+  outputs byte-identical to `validation_1.0cap_q90_s0695_esa` (same inputs plus
+  the option, the option build); memstats and popdyn_annual_indic excepted.
 
 ## Upstream
 
