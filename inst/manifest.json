@@ -42,6 +42,36 @@
   },
   "default": "1.9.3-7cf6378e",
   "versions": {
+    "1.9.3-7cf6378e-westcoast": {
+      "upstream_sha": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
+      "upstream_ref": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
+      "displace_version": "1.9.3",
+      "displace_build": "0",
+      "released": "2026-10-23",
+      "feature_patches": "row-catch-rates trip-time-cap empty-szgroup-avai",
+      "note": [
+        "Upstream 1.9.3 plus three displaceR patches, each a diff against plain 1.9.3",
+        "(docs/row-catch-rates.md, docs/trip-time-cap.md, docs/empty-szgroup-avai.md).",
+        "catch_rate_by_row and trip_time_cap are dyn_alloc options, off unless the",
+        "scenario sets them. empty-szgroup-avai is always on: size groups with no fish",
+        "keep their availability, so fish growing or recruited into them are no longer",
+        "deleted. Results therefore differ from plain 1.9.3 whenever a size group is empty."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7cf6378e-westcoast/displace-7cf6378e642a-linux-x86_64-glibc2.39-row-catch-rates+trip-time-cap+empty-szgroup-avai.tar.gz",
+          "sha256": "1626520b85c8fbc2dcbff5affb9eaef920cf1325a37425a4f5ae2470933bbb01",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-7cf6378e-westcoast/displace-7cf6378e642a-macos-arm64-row-catch-rates+trip-time-cap+empty-szgroup-avai.tar.gz",
+          "sha256": "d9cb4ebd6800a5955a6239809253e73cd1b22038b3d4b9dcf1a704957f980bfb",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        }
+      }
+    },
     "1.9.3-7cf6378e": {
       "upstream_sha": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
       "upstream_ref": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
