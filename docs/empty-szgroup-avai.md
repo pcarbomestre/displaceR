@@ -1,8 +1,9 @@
-# Feature patch `empty-szgroup-avai` (DISPLACE 1.9.3, on `trip-time-cap`)
+# Feature patch `empty-szgroup-avai` (DISPLACE 1.9.3)
 
 Status: experimental (2026-10-20), branch `empty-szgroup-avai`. Not in the
-manifest; built locally only (`~/displace-esa/payload` on sequoia). Apply after
-`row-catch-rates` and `trip-time-cap` (the diff is against 1.9.3 + both).
+manifest; built locally only (`~/displace-esa/payload` on sequoia). The diff is against
+plain 1.9.3 (2026-10-23; it was against 1.9.3 + `row-catch-rates` +
+`trip-time-cap`) and applies alone or with those two, in any order.
 
 ## What it fixes
 
@@ -39,7 +40,7 @@ unchanged.
 E=<micromamba env with libboost-devel geographiclib-cpp patchelf>
 export PATH=$E/bin:$PATH CMAKE_PREFIX_PATH=$E LD_LIBRARY_PATH=$E/lib
 tools/build-displace.sh --ref 7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c \
-  --patch row-catch-rates --patch trip-time-cap --patch empty-szgroup-avai \
+  --patch empty-szgroup-avai \
   --workdir /tmp/<w> --outdir <o> --jobs 8
 ```
 

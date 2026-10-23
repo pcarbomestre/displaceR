@@ -1,8 +1,9 @@
-# Feature patch `trip-time-cap` (DISPLACE 1.9.3, on `row-catch-rates`)
+# Feature patch `trip-time-cap` (DISPLACE 1.9.3)
 
 Status: experimental (2026-10-15), branch `ground-time-cap`. Not in the
-manifest; built locally only (`~/displace-cap/payload` on sequoia). Apply after
-`row-catch-rates` (the diff is against 1.9.3 + row-catch-rates).
+manifest; built locally only (`~/displace-cap/payload` on sequoia). The diff is against
+plain 1.9.3 (2026-10-23; it was against 1.9.3 + `row-catch-rates`) and applies
+alone or with `row-catch-rates` and `empty-szgroup-avai`, in any order.
 
 ## What it does
 
@@ -33,7 +34,7 @@ draws). Log line: `trip_time_cap: N of M vessels have a cap ...`.
 E=<micromamba env with libboost-devel geographiclib-cpp patchelf>
 export PATH=$E/bin:$PATH CMAKE_PREFIX_PATH=$E LD_LIBRARY_PATH=$E/lib
 tools/build-displace.sh --ref 7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c \
-  --patch row-catch-rates --patch trip-time-cap --workdir /tmp/<w> --outdir <o> --jobs 8
+  --patch trip-time-cap --workdir /tmp/<w> --outdir <o> --jobs 8
 ```
 
 ## Open

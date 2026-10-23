@@ -1,10 +1,20 @@
 diff --git a/commons/TextImpl/LoadVesselsImpl.cpp b/commons/TextImpl/LoadVesselsImpl.cpp
-index d87abb8a..03fbacc5 100644
+index 72098d44..6b2fc6af 100644
 --- a/commons/TextImpl/LoadVesselsImpl.cpp
 +++ b/commons/TextImpl/LoadVesselsImpl.cpp
-@@ -287,6 +287,37 @@ bool read_catchrates_per_metier_harbour(const std::string & a_vessel, const std:
- }
+@@ -14,6 +14,9 @@
  
+ #include <map>
+ #include <vector>
++#include <sstream>   // displaceR trip-time-cap
++#include <cmath>
++#include <stdexcept>
+ 
+ 
+ using namespace std;
+@@ -539,6 +542,36 @@ VesselsData loadLocalData(SimModel &model, int month, int quarter, int semester,
+     return loadedData;
+ }
  
 +// displaceR trip-time-cap: read vesselsspe_<fname>/vessels_max_trip_hours.dat
 +// (heading line, then "VE_REF hours"). Returns false if there is no file; a
@@ -36,11 +46,10 @@ index d87abb8a..03fbacc5 100644
 +    return true;
 +}
 +
-+
- // grounds_by_port: keep the entries the simulator can use for this vessel and
- // quarter. A ground must be one of the vessel's fgrounds (its per-node catch rates
- // and the per-ground bookkeeping are indexed on them), the metier must exist, the
-@@ -842,6 +873,19 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+ static
+ void loadVessels(SimModel &model, std::string fname, std::string folder, int month, int quarter, int semester, int selected_vessels_only)
+ {
+@@ -817,6 +850,20 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
      }
  
  
@@ -57,14 +66,15 @@ index d87abb8a..03fbacc5 100644
 +        cout << "trip_time_cap: " << with_cap << " of " << vessels.size()
 +             << " vessels have a cap in vessels_max_trip_hours.dat" << "\n";
 +    }
-     if (model.scenario().dyn_alloc_sce.option(Options::catch_rate_by_row)) {
-         int with_rates = 0;
-         for (auto v : vessels) if (v->has_row_catch_rates()) ++with_rates;
++
+     model.setVessels(vessels);
+ }
+ 
 diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
-index 5306e4da..d4b3c550 100644
+index 4cbb037e..91a2f488 100644
 --- a/commons/Vessel.cpp
 +++ b/commons/Vessel.cpp
-@@ -9595,8 +9595,21 @@ int Vessel::should_i_stop_fishing(const SimModel& simModel,
+@@ -9564,8 +9564,21 @@ int Vessel::should_i_stop_fishing(const SimModel& simModel,
              this->set_reason_to_go_back(3);
          }
  
@@ -88,52 +98,52 @@ index 5306e4da..d4b3c550 100644
          unlock();
          return(stop_fishing);
 diff --git a/commons/options.cpp b/commons/options.cpp
-index f7930f2b..89c4d1a0 100644
+index 3f2ae1f1..27058ad7 100644
 --- a/commons/options.cpp
 +++ b/commons/options.cpp
-@@ -100,6 +100,7 @@ DynAllocOptions::DynAllocOptions()
-     O(mMap, partial_fishing);
-     O(mMap, grounds_by_port);
-     O(mMap, catch_rate_by_row);
+@@ -95,6 +95,7 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, aSingleMetierPerTrip);
+     O(mMap, unlimitedTankCap);
+     O(mMap, unlimitedCarryCap);
 +    O(mMap, trip_time_cap);
- 
-   
- 
+     O(mMap, out_of_range_implicit);
+     O(mMap, old_timestep_accounting);
+     O(mMap, partial_fishing);
 diff --git a/include/Vessel.h b/include/Vessel.h
-index ddbe42b0..ecac4624 100644
+index 1c767403..5cc562fd 100644
 --- a/include/Vessel.h
 +++ b/include/Vessel.h
 @@ -174,6 +174,8 @@ private:
-         types::NodeId trip_port = types::special::InvalidNodeId;
-         // displaceR row-catch-rates: (metier, harbour node, pop) -> kg per hour
-         std::map<std::tuple<int, int, int>, double> row_catch_rates;
-+        // displaceR trip-time-cap: see set_max_trip_hours()
-+        double max_trip_hours = -1.0;
          // node the current/last trip departed from (previous_harbour_idx is reset
          // to 0 at every quarterly reload, so it cannot serve as a record)
          types::NodeId trip_dep_port = types::special::InvalidNodeId;
-@@ -439,6 +441,12 @@ public:
-         bool has_row_catch_rates() const { return !row_catch_rates.empty(); }
-         // the rate of the current metier and trip port for pop; false if none
-         bool get_row_catch_rate(int popIdx, double &rate);
-+
++        // displaceR trip-time-cap: see set_max_trip_hours()
++        double max_trip_hours = -1.0;
+ 
+ 
+         double lastTrip_revenues;
+@@ -414,6 +416,12 @@ public:
+ 
+         std::vector<char> metier_mask;
+ 
 +        // displaceR trip-time-cap (dyn_alloc option trip_time_cap): hours at sea
 +        // after which the vessel stops fishing and returns (time at sea +
 +        // steaming to the nearest port >= cap; reason_to_go_back 5); <= 0: none
 +        void set_max_trip_hours(double h) { max_trip_hours = h; }
 +        double get_max_trip_hours() const { return max_trip_hours; }
-         
- 
- 		int get_idx () const;
++
+         // dyn_alloc_sce option grounds_by_port: see PortGroundEntry above
+         void set_port_grounds(const std::vector<PortGroundEntry> &entries);
+         const std::vector<PortGroundEntry> &get_port_grounds() const { return port_grounds; }
 diff --git a/include/options.h b/include/options.h
-index bcb390f3..3c7c8990 100644
+index 316cdd3a..101ad7ad 100644
 --- a/include/options.h
 +++ b/include/options.h
-@@ -158,6 +158,7 @@ enum Dyn_Alloc {
-     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 
-     grounds_by_port, 
-     catch_rate_by_row, // displaceR row-catch-rates: catch rate of the trip's vessel-metier-port row (<vid>_catchrates_per_metier_harbour.dat)
+@@ -153,6 +153,7 @@ enum Dyn_Alloc {
+     aSingleMetierPerTrip,
+     unlimitedTankCap,
+     unlimitedCarryCap,
 +    trip_time_cap, // displaceR trip-time-cap: stop fishing when time at sea + steaming back reaches the vessel's cap (vessels_max_trip_hours.dat)
- 
-     Dyn_Alloc_last
- };
+     out_of_range_implicit,
+     old_timestep_accounting, // timestep-accounting: a step is a 1 h budget spent on several actions, vmslike in segments
+     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 
