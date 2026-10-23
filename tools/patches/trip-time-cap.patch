@@ -1,0 +1,149 @@
+diff --git a/commons/TextImpl/LoadVesselsImpl.cpp b/commons/TextImpl/LoadVesselsImpl.cpp
+index 72098d44..6b2fc6af 100644
+--- a/commons/TextImpl/LoadVesselsImpl.cpp
++++ b/commons/TextImpl/LoadVesselsImpl.cpp
+@@ -14,6 +14,9 @@
+ 
+ #include <map>
+ #include <vector>
++#include <sstream>   // displaceR trip-time-cap
++#include <cmath>
++#include <stdexcept>
+ 
+ 
+ using namespace std;
+@@ -539,6 +542,36 @@ VesselsData loadLocalData(SimModel &model, int month, int quarter, int semester,
+     return loadedData;
+ }
+ 
++// displaceR trip-time-cap: read vesselsspe_<fname>/vessels_max_trip_hours.dat
++// (heading line, then "VE_REF hours"). Returns false if there is no file; a
++// malformed line is an error.
++bool read_vessels_max_trip_hours(const std::string & fname, const std::string & folder,
++    std::map<std::string, double> &caps)
++{
++    caps.clear();
++    std::string filename = folder + "/vesselsspe_" + fname + "/vessels_max_trip_hours.dat";
++    std::ifstream in(filename.c_str());
++    if (in.fail()) return false;
++    std::string line;
++    std::getline(in, line); // heading
++    int linenum = 1;
++    while (std::getline(in, line)) {
++        ++linenum;
++        if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
++        std::istringstream ss(line);
++        std::string vid;
++        double h;
++        if (!(ss >> vid >> h) || !std::isfinite(h) || h <= 0) {
++            std::stringstream er;
++            er << "trip_time_cap: cannot use line " << linenum << " of " << filename
++               << " (expected: VE_REF hours, hours > 0)";
++            throw std::runtime_error(er.str());
++        }
++        caps[vid] = h;
++    }
++    return true;
++}
++
+ static
+ void loadVessels(SimModel &model, std::string fname, std::string folder, int month, int quarter, int semester, int selected_vessels_only)
+ {
+@@ -817,6 +850,20 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+     }
+ 
+ 
++    // displaceR trip-time-cap
++    if (model.scenario().dyn_alloc_sce.option(Options::trip_time_cap)) {
++        std::map<std::string, double> caps;
++        int with_cap = 0;
++        if (read_vessels_max_trip_hours(fname, folder, caps)) {
++            for (auto v : vessels) {
++                auto it = caps.find(v->get_name());
++                if (it != caps.end()) { v->set_max_trip_hours(it->second); ++with_cap; }
++            }
++        }
++        cout << "trip_time_cap: " << with_cap << " of " << vessels.size()
++             << " vessels have a cap in vessels_max_trip_hours.dat" << "\n";
++    }
++
+     model.setVessels(vessels);
+ }
+ 
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 4cbb037e..91a2f488 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -9564,8 +9564,21 @@ int Vessel::should_i_stop_fishing(const SimModel& simModel,
+             this->set_reason_to_go_back(3);
+         }
+ 
++        // displaceR trip-time-cap: go back when the time at sea plus the steaming
++        // to the nearest port reaches the vessel's cap (observed trip durations)
++        bool flag4 = true;
++        if (dyn_alloc_sce.option(Options::trip_time_cap) && this->get_max_trip_hours() > 0)
++        {
++            vector<double> d_ports = compute_distance_fgrounds_on_the_fly(nodes,
++                this->get_loc()->get_idx_node(), this->get_harbours());
++            double back_h = d_ports.empty() ? 0.0 :
++                *min_element(d_ports.begin(), d_ports.end()) / (this->get_speed() * NAUTIC);
++            flag4 = this->get_timeatsea() + back_h < this->get_max_trip_hours();
++            if (!flag4) this->set_reason_to_go_back(5);
++        }
++
+         int stop_fishing =1;
+-        if(flag1 && flag2 && flag3) stop_fishing =0;
++        if(flag1 && flag2 && flag3 && flag4) stop_fishing =0;
+ 
+         unlock();
+         return(stop_fishing);
+diff --git a/commons/options.cpp b/commons/options.cpp
+index 3f2ae1f1..27058ad7 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -95,6 +95,7 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, aSingleMetierPerTrip);
+     O(mMap, unlimitedTankCap);
+     O(mMap, unlimitedCarryCap);
++    O(mMap, trip_time_cap);
+     O(mMap, out_of_range_implicit);
+     O(mMap, old_timestep_accounting);
+     O(mMap, partial_fishing);
+diff --git a/include/Vessel.h b/include/Vessel.h
+index 1c767403..5cc562fd 100644
+--- a/include/Vessel.h
++++ b/include/Vessel.h
+@@ -174,6 +174,8 @@ private:
+         // node the current/last trip departed from (previous_harbour_idx is reset
+         // to 0 at every quarterly reload, so it cannot serve as a record)
+         types::NodeId trip_dep_port = types::special::InvalidNodeId;
++        // displaceR trip-time-cap: see set_max_trip_hours()
++        double max_trip_hours = -1.0;
+ 
+ 
+         double lastTrip_revenues;
+@@ -414,6 +416,12 @@ public:
+ 
+         std::vector<char> metier_mask;
+ 
++        // displaceR trip-time-cap (dyn_alloc option trip_time_cap): hours at sea
++        // after which the vessel stops fishing and returns (time at sea +
++        // steaming to the nearest port >= cap; reason_to_go_back 5); <= 0: none
++        void set_max_trip_hours(double h) { max_trip_hours = h; }
++        double get_max_trip_hours() const { return max_trip_hours; }
++
+         // dyn_alloc_sce option grounds_by_port: see PortGroundEntry above
+         void set_port_grounds(const std::vector<PortGroundEntry> &entries);
+         const std::vector<PortGroundEntry> &get_port_grounds() const { return port_grounds; }
+diff --git a/include/options.h b/include/options.h
+index 316cdd3a..101ad7ad 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -153,6 +153,7 @@ enum Dyn_Alloc {
+     aSingleMetierPerTrip,
+     unlimitedTankCap,
+     unlimitedCarryCap,
++    trip_time_cap, // displaceR trip-time-cap: stop fishing when time at sea + steaming back reaches the vessel's cap (vessels_max_trip_hours.dat)
+     out_of_range_implicit,
+     old_timestep_accounting, // timestep-accounting: a step is a 1 h budget spent on several actions, vmslike in segments
+     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 

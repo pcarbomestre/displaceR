@@ -1,5 +1,11 @@
 # displaceR 0.1.0.9004
 
+* New DISPLACE build in the manifest, a pre-release (Linux glibc 2.39 and macOS
+  arm64): `install_displace("1.9.3-7cf6378e-westcoast")` is upstream 1.9.3 plus
+  the `row-catch-rates`, `trip-time-cap` and `empty-szgroup-avai` patches, now
+  each a diff against plain 1.9.3 that applies alone or with the others. The
+  options `catch_rate_by_row` and `trip_time_cap` are off unless the scenario
+  sets them; `empty-szgroup-avai` is always on. The default is unchanged.
 * The manifest default is now `1.9.3-7cf6378e`: plain upstream DISPLACE 1.9.3
   (HEAD `7cf6378e`, not tagged upstream), with no feature patches. Published for
   Linux (glibc >= 2.39), macOS arm64 and Windows x86_64. Results differ from

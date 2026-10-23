@@ -1,0 +1,204 @@
+diff --git a/commons/TextImpl/LoadVesselsImpl.cpp b/commons/TextImpl/LoadVesselsImpl.cpp
+index 72098d44..d87abb8a 100644
+--- a/commons/TextImpl/LoadVesselsImpl.cpp
++++ b/commons/TextImpl/LoadVesselsImpl.cpp
+@@ -2,6 +2,10 @@
+ // Created by fuga on 29/02/2020.
+ //
+ 
++#include <set>
++#include <sstream>
++#include <cmath>
++#include <tuple>
+ #include "commons_global.h"
+ 
+ #include "TextfileModelLoader.h"
+@@ -249,6 +253,40 @@ bool read_fgrounds_harbours(const std::string & a_quarter, const std::string & a
+ }
+ 
+ 
++// displaceR row-catch-rates: read vesselsspe_<fname>/<vid>_catchrates_per_metier_harbour.dat.
++// One heading line, then rows "metier harbour pop kg_h" (harbour = node index,
++// pop = population index). Returns false if the file does not exist (the vessel
++// then keeps its vessel-wide rates); a malformed row is an error.
++bool read_catchrates_per_metier_harbour(const std::string & a_vessel, const std::string & fname,
++    const std::string & folder, int nbpops, std::map<std::tuple<int, int, int>, double> &rates)
++{
++    rates.clear();
++    std::string filename = folder + "/vesselsspe_" + fname + "/" + a_vessel +
++        "_catchrates_per_metier_harbour.dat";
++    std::ifstream in(filename.c_str());
++    if (in.fail()) return false;
++    std::string line;
++    std::getline(in, line); // heading
++    int linenum = 1;
++    while (std::getline(in, line)) {
++        ++linenum;
++        if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
++        std::istringstream ss(line);
++        long metier, harbour, pop;
++        double kg_h;
++        if (!(ss >> metier >> harbour >> pop >> kg_h) || pop < 0 || pop >= nbpops ||
++            !(kg_h >= 0) || !std::isfinite(kg_h)) {
++            std::stringstream er;
++            er << "catch_rate_by_row: cannot use line " << linenum << " of " << filename
++               << " (expected: metier harbour pop kg_h, pop in 0.." << nbpops - 1 << ", kg_h >= 0)";
++            throw std::runtime_error(er.str());
++        }
++        rates[std::make_tuple(static_cast<int>(metier), static_cast<int>(harbour), static_cast<int>(pop))] = kg_h;
++    }
++    return true;
++}
++
++
+ // grounds_by_port: keep the entries the simulator can use for this vessel and
+ // quarter. A ground must be one of the vessel's fgrounds (its per-node catch rates
+ // and the per-ground bookkeeping are indexed on them), the metier must exist, the
+@@ -773,6 +811,15 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+             
+         }
+ 
++        // displaceR row-catch-rates: rates per metier and harbour, read once
++        // (they do not change with the quarter, and the vessel keeps them)
++        if (model.scenario().dyn_alloc_sce.option(Options::catch_rate_by_row)) {
++            std::map<std::tuple<int, int, int>, double> rates;
++            if (read_catchrates_per_metier_harbour(vname, fname, folder, static_cast<int>(model.populations().size()), rates)) {
++                vessels[i]->set_row_catch_rates(rates);
++            }
++        }
++
+         // initialise the individual quota from global_TAC*percent_in_simu*percent_this_vessel
+         if (model.is_tacs()) {
+             for (unsigned int sp = 0; sp < model.populations().size(); sp++) {
+@@ -795,6 +842,12 @@ void loadVessels(SimModel &model, std::string fname, std::string folder, int mon
+     }
+ 
+ 
++    if (model.scenario().dyn_alloc_sce.option(Options::catch_rate_by_row)) {
++        int with_rates = 0;
++        for (auto v : vessels) if (v->has_row_catch_rates()) ++with_rates;
++        cout << "catch_rate_by_row: " << with_rates << " of " << vessels.size()
++             << " vessels read <vid>_catchrates_per_metier_harbour.dat" << "\n";
++    }
+     if (model.scenario().dyn_alloc_sce.option(Options::grounds_by_port)) {
+         int with = 0;
+         for (auto v : vessels) if (v->has_port_grounds()) ++with;
+diff --git a/commons/Vessel.cpp b/commons/Vessel.cpp
+index 4cbb037e..5306e4da 100644
+--- a/commons/Vessel.cpp
++++ b/commons/Vessel.cpp
+@@ -2681,6 +2681,20 @@ void Vessel::set_port_grounds(const std::vector<PortGroundEntry> &entries)
+  }
+ 
+ 
++// displaceR row-catch-rates: the rate of the current metier and trip port for
++// pop (kg per fishing hour); false if the vessel has no such row (then the
++// caller keeps the vessel-wide rate).
++bool Vessel::get_row_catch_rate(int popIdx, double &rate)
++{
++    if (row_catch_rates.empty()) return false;
++    if (this->get_metier() == nullptr || trip_port == types::special::InvalidNodeId) return false;
++    auto it = row_catch_rates.find(std::make_tuple(this->get_metier()->get_name(),
++                                                   static_cast<int>(trip_port.toIndex()), popIdx));
++    if (it == row_catch_rates.end()) return false;
++    rate = it->second;
++    return true;
++}
++
+ std::vector<int> Vessel::port_ground_entries_of(types::NodeId p) const
+ {
+     std::vector<int> idx;
+@@ -3873,6 +3887,14 @@ void Vessel::handle_explicit_population(
+         h.betas_per_pop[popIdx] +
+         avaiBeta) * populations.at(popIdx)->get_cpue_multiplier() * this->get_metier()->get_catchrate_multiplier() * tech_creeping_multiplier 
+           * m_fishing_fraction; // timestep-accounting: partial_fishing (1 otherwise)
++    // displaceR row-catch-rates: the trip's vessel-metier-port rate in place of
++    // exp(vessel beta + metier beta); habitat and availability effects kept
++    double rowRate = 0.0;
++    if (dyn_alloc_sce.option(Options::catch_rate_by_row) && this->get_row_catch_rate(static_cast<int>(popIdx), rowRate)) {
++        catchPotential = rowRate * std::exp(h.betas_per_pop[popIdx] + avaiBeta) *
++            populations.at(popIdx)->get_cpue_multiplier() * this->get_metier()->get_catchrate_multiplier() *
++            tech_creeping_multiplier * m_fishing_fraction;
++    }
+ 
+    
+     double totCatchWeight = std::min(totAvail, catchPotential);
+@@ -4126,6 +4148,15 @@ void Vessel::handle_implicit_population(
+             scale = 1.0;
+         }
+     }
++    // displaceR row-catch-rates: the trip's vessel-metier-port rate as the mean
++    // (shape 1, scale = rate), as the per-node values are built from the vessel rate
++    {
++        double rowRate = 0.0;
++        if (dyn_alloc_sce.option(Options::catch_rate_by_row) && this->get_row_catch_rate(static_cast<int>(popIdx), rowRate)) {
++            shape = 1.0;
++            scale = rowRate;
++        }
++    }
+ 
+     // Draw a gamma variate (C++17 does not have a standard gamma RNG,
+     // so we use the classic acceptance‑rejection implementation
+diff --git a/commons/options.cpp b/commons/options.cpp
+index 3f2ae1f1..f7930f2b 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -99,6 +99,7 @@ DynAllocOptions::DynAllocOptions()
+     O(mMap, old_timestep_accounting);
+     O(mMap, partial_fishing);
+     O(mMap, grounds_by_port);
++    O(mMap, catch_rate_by_row);
+ 
+   
+ 
+diff --git a/include/Vessel.h b/include/Vessel.h
+index 1c767403..ddbe42b0 100644
+--- a/include/Vessel.h
++++ b/include/Vessel.h
+@@ -40,6 +40,7 @@
+ #include <deque>
+ #include <list>
+ #include <map>
++#include <tuple>
+ 
+ #include <memory>
+ #include <fstream>
+@@ -171,6 +172,8 @@ private:
+         // grounds_by_port: see PortGroundEntry above
+         std::vector<PortGroundEntry> port_grounds;
+         types::NodeId trip_port = types::special::InvalidNodeId;
++        // displaceR row-catch-rates: (metier, harbour node, pop) -> kg per hour
++        std::map<std::tuple<int, int, int>, double> row_catch_rates;
+         // node the current/last trip departed from (previous_harbour_idx is reset
+         // to 0 at every quarterly reload, so it cannot serve as a record)
+         types::NodeId trip_dep_port = types::special::InvalidNodeId;
+@@ -425,6 +428,17 @@ public:
+         std::vector<int> port_ground_entries_of(types::NodeId p) const;
+                 // is this entry's ground closed to its metier for this vessel (area_monthly_closure)?
+         bool is_port_ground_banned(const PortGroundEntry & e, const vector<Node*> &nodes) const;
++
++        // displaceR row-catch-rates (dyn_alloc option catch_rate_by_row): catch
++        // rates (kg per fishing hour) per metier, harbour and pop, from
++        // vesselsspe_*/<vid>_catchrates_per_metier_harbour.dat. The rate of the
++        // trip's metier and trip port replaces the vessel's: the gamma scale of
++        // implicit stocks (and of stocks on out-of-range nodes) and
++        // exp(vessel beta + metier beta) of explicit stocks.
++        void set_row_catch_rates(const std::map<std::tuple<int, int, int>, double> &rates) { row_catch_rates = rates; }
++        bool has_row_catch_rates() const { return !row_catch_rates.empty(); }
++        // the rate of the current metier and trip port for pop; false if none
++        bool get_row_catch_rate(int popIdx, double &rate);
+         
+ 
+ 		int get_idx () const;
+diff --git a/include/options.h b/include/options.h
+index 316cdd3a..bcb390f3 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -157,6 +157,7 @@ enum Dyn_Alloc {
+     old_timestep_accounting, // timestep-accounting: a step is a 1 h budget spent on several actions, vmslike in segments
+     partial_fishing,  // timestep-accounting: fishing in fractions of an hour 
+     grounds_by_port, 
++    catch_rate_by_row, // displaceR row-catch-rates: catch rate of the trip's vessel-metier-port row (<vid>_catchrates_per_metier_harbour.dat)
+ 
+     Dyn_Alloc_last
+ };

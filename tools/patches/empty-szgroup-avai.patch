@@ -1,0 +1,55 @@
+diff --git a/commons/options.cpp b/commons/options.cpp
+index 3f2ae1f1..2e5a9f86 100644
+--- a/commons/options.cpp
++++ b/commons/options.cpp
+@@ -139,6 +139,7 @@ PopSceOptions::PopSceOptions()
+     O(mMap, static_avai_2);
+     O(mMap, static_avai_3);
+     O(mMap, static_avai_4);
++    O(mMap, keepEmptySzgroupAvai);
+ 
+ 
+     for (int i = 0; i < n(); ++i)
+diff --git a/include/options.h b/include/options.h
+index 316cdd3a..51c8e1e1 100644
+--- a/include/options.h
++++ b/include/options.h
+@@ -190,7 +190,8 @@ enum Pop_Sce {
+     static_avai_2,
+     static_avai_3,
+     static_avai_4,
+-  
++    keepEmptySzgroupAvai, // displaceR empty-szgroup-avai: accepted for older scenario files, no effect: a size group with no fish on any node now always keeps its availability at the growth redispatch (instead of 0 everywhere, which deletes the fish growing or recruited into it)
++
+     Pop_Sce_last
+ };
+ 
+diff --git a/simulator/biomodule2.cpp b/simulator/biomodule2.cpp
+index ee35fdea..d59e0153 100644
+--- a/simulator/biomodule2.cpp
++++ b/simulator/biomodule2.cpp
+@@ -1216,12 +1216,24 @@ if(binary_search (tsteps_months.begin(), tsteps_months.end(), tstep))
+ 
+                             std::vector<double> new_avai_pops(a_tot_N_at_szgroup.size(), 0);
+                             newNs = node_list.at(n)->get_Ns_pops_at_szgroup(sp);
++                            // displaceR empty-szgroup-avai: a size group with no fish on any
++                            // node keeps its current availability (the input map until it
++                            // first holds fish), so the fish growing or recruited into it are
++                            // put back on the nodes by distribute_N() instead of deleted. Always on.
++                            const bool keep_empty = true; // (dyn_pop option keepEmptySzgroupAvai: accepted, no effect)
++                            std::vector<double> old_avai_pops;
++                            if (keep_empty)
++                                old_avai_pops = populations.at(sp)->get_availability(node_list.at(n)->get_idx_node());
+                             for (unsigned int sz = 0; sz < a_tot_N_at_szgroup.size(); sz++)
+                                 if (accumulated_Ns[sz] != 0)
+                                 {
+                                     double val = (newNs[sz]) / (accumulated_Ns[sz]);
+                                     new_avai_pops.at(sz) = val;
+                                 }
++                                else if (keep_empty && sz < old_avai_pops.size())
++                                {
++                                    new_avai_pops.at(sz) = old_avai_pops[sz];
++                                }
+ 
+ 
+                             
