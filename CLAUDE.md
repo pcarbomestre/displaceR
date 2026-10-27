@@ -46,7 +46,12 @@ document it as a known limitation.
 - 1.9.3 = HEAD `7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c` (2026-10-14), commit
   "v1.9.3", **not tagged**; reports `1.9.3 build 0`. Builds plain, no feature
   patches (upstream absorbed ours). The manifest default since 2026-10-14
-  (`1.9.3-7cf6378e`).
+  (`1.9.3-7cf6378e`) until 2026-10-27.
+- 1.9.5 = HEAD `e454852efe7af15f40e6649e4943af432bfde3a5` (2026-10-27), commit
+  "v1.9.5", **not tagged**; reports `1.9.5 build 0`. Builds plain. Ships
+  `catch_rate_by_row`, `trip_time_cap` and the empty-size-group N fix upstream.
+  The manifest default since 2026-10-27 (`1.9.5-e454852e`), release tag
+  `displace-1.9.5` (named by version, not SHA).
 
 ## Architecture (three layers, deliberately separate)
 

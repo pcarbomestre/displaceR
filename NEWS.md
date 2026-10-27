@@ -1,3 +1,14 @@
+# displaceR 0.1.0.9005
+
+* The manifest default is now `1.9.5-e454852e`: plain upstream DISPLACE 1.9.5
+  (HEAD `e454852e`, not tagged upstream), with no feature patches. Published for
+  Linux (glibc >= 2.39), macOS arm64 and Windows x86_64 under the release
+  `displace-1.9.5`. New upstream since 1.9.3: the dyn_alloc options
+  `catch_rate_by_row` (catch rates per vessel-metier-port instead of the CPUE
+  equation) and `trip_time_cap` (reads `vessels_max_trip_hours.dat`), and a fix
+  for N leaking from size groups that start empty. Results can differ from
+  1.9.3 when a size group is empty. `1.9.3-7cf6378e` stays installable by name.
+
 # displaceR 0.1.0.9004
 
 * The manifest default is now `1.9.3-7cf6378e`: plain upstream DISPLACE 1.9.3
