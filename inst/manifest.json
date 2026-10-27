@@ -40,8 +40,41 @@
       }
     }
   },
-  "default": "1.9.3-7cf6378e",
+  "default": "1.9.5-e454852e",
   "versions": {
+    "1.9.5-e454852e": {
+      "upstream_sha": "e454852efe7af15f40e6649e4943af432bfde3a5",
+      "upstream_ref": "e454852efe7af15f40e6649e4943af432bfde3a5",
+      "displace_version": "1.9.5",
+      "displace_build": "0",
+      "released": "2026-10-27",
+      "note": [
+        "Upstream 1.9.5: HEAD e454852e, commit 'v1.9.5', not tagged. The manifest default",
+        "since 2026-10-27. No feature patches. New since 1.9.3: dyn_alloc options",
+        "catch_rate_by_row and trip_time_cap (reads vessels_max_trip_hours.dat), and a fix",
+        "for N leaking from size groups that start empty."
+      ],
+      "builds": {
+        "2.39": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-1.9.5/displace-e454852efe7a-linux-x86_64-glibc2.39.tar.gz",
+          "sha256": "d96a6be266502f58279dec9789796622efb0a0c05a12bf6613dd63903bc49089",
+          "arch": "x86_64",
+          "built_on": "ubuntu-24.04"
+        },
+        "macos-arm64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-1.9.5/displace-e454852efe7a-macos-arm64.tar.gz",
+          "sha256": "2975efc0fc921c29724926c67c9f77aa77d16281ec7a3d20f1dc829100870e78",
+          "arch": "arm64",
+          "built_on": "macos-14"
+        },
+        "windows-x86_64": {
+          "url": "https://github.com/pcarbomestre/displaceR/releases/download/displace-1.9.5/displace-e454852efe7a-windows-x86_64.tar.gz",
+          "sha256": "b9d1938d71f97b0e3b753472ff2a693d38ea615da47f2e13ff2c3a3222510ea7",
+          "arch": "x86_64",
+          "built_on": "windows-2022"
+        }
+      }
+    },
     "1.9.3-7cf6378e": {
       "upstream_sha": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
       "upstream_ref": "7cf6378e642a617cd0c3fba4b1580eb9f78ccd6c",
@@ -50,7 +83,7 @@
       "released": "2026-10-14",
       "note": [
         "Upstream 1.9.3: HEAD 7cf6378e, commit 'v1.9.3', not tagged. The manifest default",
-        "since 2026-10-14. No feature patches: upstream ships grounds_by_port,",
+        "2026-10-14 to 2026-10-27. No feature patches: upstream ships grounds_by_port,",
         "out_of_range_implicit, partial_fishing, seeded shuffles and the A*/do_sample fixes",
         "itself, and the 1 h time budget is on by default (old_timestep_accounting turns it",
         "off), so vmslike is segmented (11 columns). shortest_paths is not available.",
